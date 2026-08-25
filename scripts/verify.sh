@@ -12,6 +12,12 @@ set -uo pipefail
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd); cd "$ROOT" || exit 1
 SHA=$(git rev-parse HEAD 2>/dev/null || echo "no-git"); OUT="artifacts/$SHA"; mkdir -p "$OUT"
 
+# python3 can resolve to a non-functional shim (e.g. a Windows Store
+# app-execution-alias) even when a real interpreter exists under a different
+# name — fall back to `python` if so.
+PYTHON=python3
+python3 -c "" >/dev/null 2>&1 || PYTHON=python
+
 GRN=$'\033[0;32m'; RED=$'\033[0;31m'; DIM=$'\033[0;90m'; NC=$'\033[0m'
 declare -A RESULT
 run(){ # run <gate-name> <command...>
@@ -43,7 +49,7 @@ skip shots
 skip a11y
 
 # ── Record ──────────────────────────────────────────────────────────────────
-python3 - "$OUT/gates.json" "${!RESULT[@]}" <<PY
+"$PYTHON" - "$OUT/gates.json" "${!RESULT[@]}" <<PY
 import json, sys
 keys = sys.argv[2:]
 vals = """$(for k in "${!RESULT[@]}"; do echo "${RESULT[$k]}"; done)""".split()

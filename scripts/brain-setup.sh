@@ -11,6 +11,12 @@ fail() { echo "  ${RED}fail${NC}  $1"; }
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$ROOT" || exit 1
 
+# python3 can resolve to a non-functional shim (e.g. a Windows Store
+# app-execution-alias) even when a real interpreter exists under a different
+# name — fall back to `python` if so.
+PYTHON=python3
+python3 -c "" >/dev/null 2>&1 || PYTHON=python
+
 echo ""
 echo "  Brain setup — $ROOT"
 echo ""
@@ -45,7 +51,7 @@ fi
 
 # 4. settings valid
 if [ -f .claude/settings.json ]; then
-  if python3 -c "import json,sys; json.load(open('.claude/settings.json'))" 2>/dev/null; then
+  if "$PYTHON" -c "import json,sys; json.load(open('.claude/settings.json'))" 2>/dev/null; then
     ok ".claude/settings.json is valid JSON"
   else
     fail ".claude/settings.json is not valid JSON — hooks will not load"

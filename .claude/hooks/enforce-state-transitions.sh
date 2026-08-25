@@ -5,7 +5,13 @@
 
 INPUT=$(cat)
 
-FILE_PATH=$(echo "$INPUT" | python3 -c "
+# python3 can resolve to a non-functional shim (e.g. a Windows Store
+# app-execution-alias) even when a real interpreter exists under a different
+# name — fall back to `python` if so.
+PYTHON=python3
+python3 -c "" >/dev/null 2>&1 || PYTHON=python
+
+FILE_PATH=$(echo "$INPUT" | "$PYTHON" -c "
 import sys, json
 try:
     print(json.load(sys.stdin).get('tool_input', {}).get('file_path', ''))
@@ -13,7 +19,7 @@ except Exception:
     pass
 " 2>/dev/null)
 
-CONTENT=$(echo "$INPUT" | python3 -c "
+CONTENT=$(echo "$INPUT" | "$PYTHON" -c "
 import sys, json
 try:
     d = json.load(sys.stdin).get('tool_input', {})

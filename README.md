@@ -10,6 +10,11 @@ This repo is not itself a monorepo of services — the engineering codebase live
 
 ## Get started
 
+Requires `bash` and a working Python interpreter on `PATH` as either `python3` or
+`python` (the hooks and `scripts/*.sh` try `python3` first and fall back to `python` —
+useful on Windows, where `python3` can resolve to a non-functional Microsoft Store
+app-execution-alias shim even when a real interpreter is installed as `python`).
+
 ```bash
 bash scripts/brain-setup.sh
 ```

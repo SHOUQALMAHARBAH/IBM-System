@@ -9,7 +9,13 @@
 
 INPUT=$(cat)
 
-CONTENT=$(echo "$INPUT" | python3 -c "
+# python3 can resolve to a non-functional shim (e.g. a Windows Store
+# app-execution-alias) even when a real interpreter exists under a different
+# name — fall back to `python` if so.
+PYTHON=python3
+python3 -c "" >/dev/null 2>&1 || PYTHON=python
+
+CONTENT=$(echo "$INPUT" | "$PYTHON" -c "
 import sys, json
 try:
     d = json.load(sys.stdin).get('tool_input', {})

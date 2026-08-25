@@ -12,6 +12,12 @@ err()  { echo "  ${RED}ERROR${NC}  $1"; ERRORS=$((ERRORS+1)); }
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$ROOT" || exit 1
 
+# python3 can resolve to a non-functional shim (e.g. a Windows Store
+# app-execution-alias) even when a real interpreter exists under a different
+# name — fall back to `python` if so.
+PYTHON=python3
+python3 -c "" >/dev/null 2>&1 || PYTHON=python
+
 echo ""
 echo "  brain-doctor — $ROOT"
 echo ""
@@ -65,7 +71,7 @@ fi
 # ── 3. Dangling internal links ──────────────────────────────────────────────
 echo ""
 echo "  Internal links"
-LINKOUT=$(python3 - <<'PYCHECK'
+LINKOUT=$("$PYTHON" - <<'PYCHECK'
 import os, re, sys
 bad = []
 for root, dirs, files in os.walk('.'):
