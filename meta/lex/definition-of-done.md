@@ -36,9 +36,20 @@ Turborepo monorepo. These path globs are relative to that repo, not this one:
 
 ## How it is enforced
 
-**Hook:** `.claude/hooks/enforce-evidence.sh` — `PreToolUse` on Bash, exit 2 on `git push` when `artifacts/<sha>/gates.json` is missing or contains a failing gate. Works unchanged today: run `bash scripts/verify.sh` before pushing, even though most of its gates currently record `skip` rather than `pass` — see `meta/context/verification-contract.md` for why that is the honest state, not a shortcut.
+**Hook:** `.claude/hooks/enforce-evidence.sh` — `PreToolUse` on Bash, exit 2 on `git push` when `artifacts/<sha>/gates.json` is missing or contains a failing gate. `ibms-app/scripts/verify.sh` now runs every gate in `meta/context/verification-contract.md` § Backend/frontend gate commands for real — typecheck, lint, unit tests, security, `db:validate`, migrations (deploy + drift check), integration, contract, smoke, accessibility, e2e, build — against `db-test`, and prints a pass/fail summary for each. It does not yet write `artifacts/<sha>/gates.json` itself, so the hook still has nothing to read; that file still needs to exist for `git push` to pass the hook. Note also that this hook is defined in this brain repo but is not yet mirrored into `ibms-app/.claude/hooks/` — until it is, it isn't active in `ibms-app` sessions at all.
 
-**CI:** `ibms-app/.github/workflows/ci.yml` exists (`test` job: migrate deploy, lint, typecheck, build, unit tests, API e2e, Playwright + axe-core e2e; `docker` job: builds the `api`/`web` images). It does not yet enforce *this* rule itself — no step checks for `artifacts/<sha>/gates.json` or blocks a PR that's missing evidence. That gap is next; until it's closed, evidence-pasting is enforced by review, not by CI.
+**CI:** `ibms-app/.github/workflows/ci.yml` runs on every pull request and on push to
+`main`, split into three jobs: `frontend` (typecheck, lint, unit/component tests,
+accessibility — `test:a11y`, axe-core — e2e via Playwright, build; uploads the Playwright
+report as a CI artifact), `backend` (typecheck, lint, unit tests, security tests —
+`npm run test:security`, `npm audit --audit-level=high` — against an ephemeral Postgres 18
+service container: `db:validate`, `db:migrate:deploy`, `db:migrate:status` drift check,
+integration tests via `test:e2e`, contract tests via `test:contract`, smoke tests via
+`bash scripts/smoke.sh api`, build), and `docker` (matrix build of the `api`/`web`
+Dockerfile images, no push — deployment target still TBD). It does not yet enforce *this*
+rule itself — no step checks for `artifacts/<sha>/gates.json` or blocks a PR that's missing
+evidence. That gap is next; until it's closed, evidence-pasting is enforced by review, not
+by CI.
 
 ## Rationale
 

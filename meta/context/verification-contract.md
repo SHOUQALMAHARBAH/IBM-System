@@ -34,7 +34,7 @@ The following were finalized when `ibms-app` was created (2026-08-25 — see
 | E2E framework | Playwright |
 | Accessibility tooling | axe-core |
 | Database migration tooling | Prisma Migrate |
-| API contract testing | OpenAPI — **not yet implemented** |
+| API contract testing | OpenAPI, generated from `@nestjs/swagger` decorators and validated against real responses with `ajv` — `apps/api/test/contract.contract-spec.ts` |
 | Containerization | Docker |
 | Preview environment | Vercel — configured, not yet connected to a live project |
 | Deployment platform | still **TBD** — see `ibms-app/README.md` § Deployment |
@@ -72,14 +72,19 @@ If `ibms-app` renames a script, update this contract instead of inventing an ali
 | Unit tests | `npm run test` | exit 0 + test count |
 | Build | `npm run build` | exit 0 |
 | Integration tests (API) | `npm run test:e2e` | exit 0 — needs a reachable `DATABASE_URL` |
-| E2E (web) | `npm run e2e` | exit 0 |
-| Accessibility | axe-core, run as part of `npm run e2e` | 0 serious/critical violations |
-| Security tests | **not yet implemented** — no `test:security` script exists | — |
+| Contract tests (API) | `npm run test:contract` (api workspace) | exit 0 — needs a reachable `DATABASE_URL`; validates real responses against the OpenAPI schema generated from controller decorators |
+| E2E (web) | `npm run e2e` | exit 0 — functional flows only, excludes `@a11y`-tagged specs |
+| Accessibility | `npm run test:a11y` (web workspace) — axe-core, split from `npm run e2e` by Playwright `@a11y` grep tag | 0 serious/critical violations |
+| Security tests | `npm run test:security` (repo root — `npm audit --audit-level=high`) | exit 0 |
 | Database migrations | `npm run db:migrate:deploy` (CI/prod) / `npm run db:migrate:dev` (local) | exit 0 |
-| Database schema tests | **not yet implemented** | — |
-| Smoke tests | **not yet implemented** — no service has a `scripts/smoke.sh` yet (see § Backend services below) | — |
+| Database schema | `npm run db:validate` — `prisma validate` | exit 0 — schema is internally valid; not a drift check, that's the migrations row above |
+| Smoke tests | `bash scripts/smoke.sh api` (repo root; also `npm run test:smoke`) | exit 0 + output |
 
 These rows must be updated in the same commit that creates the relevant engineering capability.
+
+A consolidated local/agent runner exists for this whole table: `ibms-app/scripts/verify.sh`
+runs every gate above against `db-test` and prints each one's real evidence, ending in a
+summary block suitable for pasting into a PR description.
 
 ---
 
@@ -91,16 +96,22 @@ Every backend service must eventually have:
 |---|---|---|
 | Boots | `npm run start` | service starts successfully |
 | Health | `curl /health` | HTTP 200 |
-| Smoke | `bash scripts/smoke.sh auth` | exit 0 + output |
+| Smoke | `bash scripts/smoke.sh <service>` (repo root) | exit 0 + output |
 | Contract | `npm run test:contract` | exit 0 |
 | Security | `npm run test:security` | exit 0 |
-| Integration | `npm run test:integration` | exit 0 |
+| Integration | `npm run test:e2e` | exit 0 |
 
-**Write `scripts/smoke.sh` for each service the day services exist.**
+**Write a case in `scripts/smoke.sh` for each service the day it exists**, dispatching to
+that service's own real implementation (e.g. `apps/api/scripts/smoke.sh`, boots via
+`npm run start`, curls `/health` and `/health/db`). There is one backend service today
+(`api`) — the dispatcher exists so `bash scripts/smoke.sh <service>` is already the right
+shape, but don't invent a case for a service (e.g. an `auth` service) that has no real
+implementation behind it yet.
 
-A smoke test must assert the service's actual job. A process merely starting is not sufficient.
-
-For IBMS, smoke coverage should eventually include at least one critical business rule, such as:
+A smoke test must assert the service's actual job. A process merely starting is not
+sufficient — `apps/api`'s smoke test also hits `/health/db`, proving the service can reach
+Postgres, not just that the process is alive. As real business logic lands, extend it (or
+add sibling smoke scripts) to cover at least one critical business rule, such as:
 
 - unauthorized user cannot approve a protected workflow;
 - maker cannot approve their own transaction where maker/checker separation applies;

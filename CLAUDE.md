@@ -15,10 +15,11 @@ Workspace instructions. Loaded into every Claude Code session in this repo and i
 
 | Date | Change | Action required |
 |------|--------|-----------------|
+| 2026-08-25 | `meta/lex/definition-of-done.md` § How it is enforced's CI paragraph replaced with the real `frontend`/`backend`/`docker` job breakdown from `ibms-app/.github/workflows/ci.yml` (it previously described a single `test` job that never existed under that name). | Re-read `meta/lex/definition-of-done.md` before citing "CI enforces this" as evidence in a PR — it still does not enforce the evidence-artifact rule itself |
+| 2026-08-25 | `ibms-app` CI split into `frontend`/`backend` GitHub Actions jobs; three previously-"not yet implemented" gates in `meta/context/verification-contract.md` are now real: Security tests (`npm run test:security` — dependency audit), Contract tests (`npm run test:contract` — OpenAPI, generated from `@nestjs/swagger` decorators, validated with `ajv`), Smoke tests (`apps/api/scripts/smoke.sh`). Accessibility split out of `npm run e2e` into its own `npm run test:a11y` gate. | Re-read `meta/context/verification-contract.md` § Backend/frontend gate commands before citing an "implemented" column as evidence in a PR |
 | 2026-08-25 | `meta/lex/definition-of-done.md`'s path-glob placeholder is filled in with `ibms-app`'s real structure (`apps/web`, `apps/api`, `packages/db`); `meta/context/verification-contract.md` gate commands updated to match. | Re-read `meta/lex/definition-of-done.md` before your next `ibms-app` PR — it names real path globs now, not a placeholder |
 | 2026-08-25 | `ibms-app` pushed to [github.com/SHOUQALMAHARBAH/IBMS-APP](https://github.com/SHOUQALMAHARBAH/IBMS-APP) and now vendors this repo as a pinned git submodule at `ibms-app/ibms-brain/` (`ibms-app/CLAUDE.md` imports it on line 1). See `meta/designs/2026-08-ibms-app-brain-submodule-sync.md`. | A change here does not reach `ibms-app` until its submodule pin is bumped — see that design doc's "Consequences" |
 | 2026-08-25 | First engineering repo (`ibms-app`) created as a sibling repo — Next.js + NestJS + Prisma/Postgres + Docker + GitHub Actions + Vercel preview. Deployment target still TBD. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md`. | Clone `ibms-app` (`--recurse-submodules`); read its `README.md`/`CLAUDE.md` for setup |
-| 2026-08-22 | Brain created from the platform-brain-template starter kit, seeded from `IBMS_Full_Scope_Context_Document.docx` and the PRIV-STD/SOP/FRM/SRS compliance package | Run `bash scripts/brain-setup.sh` |
 
 ---
 
