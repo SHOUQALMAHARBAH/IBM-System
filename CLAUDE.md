@@ -15,6 +15,7 @@ Workspace instructions. Loaded into every Claude Code session in this repo and i
 
 | Date | Change | Action required |
 |------|--------|-----------------|
+| 2026-08-25 | First engineering repo (`ibms-app`) created as a sibling repo — Next.js + NestJS + Prisma/Postgres + Docker + GitHub Actions + Vercel preview. Deployment target still TBD. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md`. | Clone `ibms-app` alongside this repo; read its `README.md`/`CLAUDE.md` for setup |
 | 2026-08-22 | Brain created from the platform-brain-template starter kit, seeded from `IBMS_Full_Scope_Context_Document.docx` and the PRIV-STD/SOP/FRM/SRS compliance package | Run `bash scripts/brain-setup.sh` |
 
 ---
@@ -53,7 +54,7 @@ meta/templates/   PR, ticket, and doc templates.
 
 ## Modules (business view — not yet mapped to repos)
 
-No engineering repo, stack, or service boundary has been chosen yet. What exists is the module inventory from `PRIV-SRS-01` and the 74-process/8-domain inventory in the context document. Treat this as the module list, not a services table, until an architecture decision fills it in:
+`ibms-app` exists as a single web+api monorepo — it is not yet split by module or service boundary. What exists is the module inventory from `PRIV-SRS-01` and the 74-process/8-domain inventory in the context document. Treat this as the module list, not a services table, until a service-boundary decision fills it in:
 
 | Module | Governs |
 |---|---|
@@ -64,17 +65,17 @@ No engineering repo, stack, or service boundary has been chosen yet. What exists
 
 **IBMS and the PCMS (Privacy Compliance Management System) are one system, not two.** PCMS is the source of truth for every privacy/consent/retention/breach/DSR rule; IBMS's compliance module consumes PCMS decisions and feeds it data (customers, policies, claims) — it must never re-derive or duplicate a privacy rule. See `meta/designs/2026-08-pcms-source-of-truth.md`.
 
-Beyond that, no call-direction / auth-boundary / system-of-record decision has been made — there is no codebase yet. **Do not invent one.** Record it here the day it's decided.
+`ibms-app` is a Next.js (web) + NestJS (api) + PostgreSQL/Prisma monorepo. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md` for why, including the Prisma 6-vs-7 and repo-split calls. No call-direction / auth-boundary / system-of-record decision beyond "web calls api" has been made yet. **Do not invent one.** Record it here the day it's decided.
 
 ---
 
 ## Common commands
 
-**None yet — no codebase exists.** Do not guess at install/test/lint/build commands; a wrong guess here is worse than an empty section, because it teaches every future agent the wrong invocation. Fill this in the same commit the first engineering repo is created.
+**This repo (`ibms-brain`) has none — it stays documentation-only.** For `ibms-app` (the engineering repo): `npm install`, `npm run dev`, `npm run test`, `npm run e2e` — see its own `README.md`/`CLAUDE.md`, not this file, for the full list and any changes to it.
 
 ## Environment
 
-**Not yet chosen.** Record venv/Node version/container requirements here the day the stack is selected.
+**This repo needs none.** `ibms-app` pins Node `20.13.0` (`.nvmrc`) and requires Docker — see its `README.md`. Record changes there, not here.
 
 ---
 
