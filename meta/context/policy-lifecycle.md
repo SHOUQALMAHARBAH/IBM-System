@@ -1,0 +1,51 @@
+# Policy lifecycle — from Opportunity to Renewal
+
+**Last verified:** 2026-08-22 · **Owner:** unassigned
+
+## What this is
+
+The path a piece of business takes from a confirmed insurance need through placement, issuance, mid-term change, and renewal. Source: `IBMS_Full_Scope_Context_Document.docx` Parts 3.2–3.6 and 3.9. Claims are handled separately — see `meta/context/claims-lifecycle.md`.
+
+## The shapes
+
+```
+Opportunity.status:
+  Needs Confirmed → RFQ Issued → Quotes Received → Comparison Built →
+  Recommendation Drafted → (Compliance Check) → Sent to Client →
+  Client Decision → Placement | Renegotiate | Closed-Lost
+
+Policy.status (post-placement):
+  Placement Confirmed → Issued (received from insurer) → Checking In Progress →
+  Discrepancy | Verified → Delivered → Active
+
+Endorsement/Cancellation.status:
+  Requested → Submitted to Insurer → Insurer Confirmed →
+  Financial Adjustment Calculated → (Refund Approval if applicable) →
+  Applied → Client Notified
+
+RenewalCase.status:
+  Renewal Due → In Progress → Quotes Obtained → Recommended →
+  Client Decision → Renewed | Lapsed | Cancelled
+```
+
+Client decision branches at two points and each routes differently: **Accept as recommended / Reject / Request further negotiation / Request alternative options / Request price reduction / Request coverage increase** — each is a distinct next step (Placement, RFQ closed, or renewed Negotiation), not a single generic "declined" state.
+
+## The rules that aren't obvious
+
+- **Policy Checking must be performed by someone other than whoever requested/placed the cover — a hard system rule, not best practice** (Part 3.4). See `meta/lex/maker-checker-segregation.md`. A discrepancy (e.g., requested limit JOD 5,000,000, issued limit JOD 3,000,000) puts the policy in `Discrepancy — Correction Requested` and blocks Delivery until resolved; this is logged as a Professional Indemnity risk event, not silently corrected and moved on.
+- **Comparison is never price alone.** The Quotation Comparison must be built across price + coverage + exclusions + deductibles + limits + insurer quality + service. A submission on a price-only comparison is a controls failure, not a shortcut (Part 3.3 Controls).
+- **A Recommendation favoring a materially higher-commission insurer over a comparable/better-value competing offer requires an explicit Conflict of Interest disclosure before it can be sent to the client** (Part 3.3) — this is a system gate, not a documentation afterthought.
+- **Cover Notes/Binders are a real interim state with a tracked expiry**, used when urgent cover is needed before full policy issuance — model this explicitly, don't fake it as an early Policy row.
+- **Negative endorsements (return premium) trigger the Refund Management workflow**, which is maker/checker-gated by value threshold — the officer who raises the endorsement never self-approves the refund (Part 3.5).
+- **Cancellation always computes a Commission Reversal tied to the same premium adjustment** — the two numbers must move together; a cancellation without a matching commission reversal is a broker overpayment exposure waiting to surface (Part 3.5 Risks).
+- **Renewal starts automatically at a configurable lead time before expiry (default 90 days)**, and the Loss Ratio for the expiring period is computed and surfaced *before* the recommendation is drafted — never negotiated blind (Part 3.9). No renewal action within the lead-time window escalates to Customer Retention, not silence.
+- **A mid-cycle risk change since the last renewal** (new location, headcount growth) **triggers a fresh Risk Assessment before the renewal RFQ is issued** — a renewal is not automatically a roll-over of the last Risk Assessment.
+- **Renewal terms declined or materially worsened by the insurer trigger full re-marketing** (a new RFQ to alternate insurers), not a simple roll-over attempt with the same insurer.
+
+## Where the code lives
+
+Nothing yet — no engineering repo exists.
+
+## Out of scope for this file
+
+Needs Assessment and Risk Assessment (pre-Opportunity) — Part 3.2 of the context document; not yet split into its own file, add one the first time this area causes a real gap. Claims handling — `meta/context/claims-lifecycle.md`. Commission calculation mechanics and financial reconciliation — Part 3.6 of the context document; not yet split into its own file.

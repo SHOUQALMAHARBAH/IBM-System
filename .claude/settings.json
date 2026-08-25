@@ -1,0 +1,73 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-workspace-updates.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-credential-safety.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-evidence.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-money-decimal.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-state-transitions.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+          },
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-sensitive-data.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/mirror-agents.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -c 'git fetch origin main --quiet 2>/dev/null; c=$(git rev-list --left-right --count HEAD...origin/main 2>/dev/null); [ -n \"$c\" ] && echo \"brain sync (ahead behind): $c\" || true'"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git -C * log *)",
+      "Bash(git -C * status *)",
+      "Bash(git -C * diff *)",
+      "Bash(git -C * branch *)",
+      "Bash(git -C * show *)",
+      "Bash(git -C * fetch *)",
+      "Bash(git -C * rev-parse *)"
+    ]
+  }
+}
