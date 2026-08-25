@@ -15,7 +15,8 @@ Workspace instructions. Loaded into every Claude Code session in this repo and i
 
 | Date | Change | Action required |
 |------|--------|-----------------|
-| 2026-08-25 | First engineering repo (`ibms-app`) created as a sibling repo — Next.js + NestJS + Prisma/Postgres + Docker + GitHub Actions + Vercel preview. Deployment target still TBD. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md`. | Clone `ibms-app` alongside this repo; read its `README.md`/`CLAUDE.md` for setup |
+| 2026-08-25 | `ibms-app` pushed to [github.com/SHOUQALMAHARBAH/IBMS-APP](https://github.com/SHOUQALMAHARBAH/IBMS-APP) and now vendors this repo as a pinned git submodule at `ibms-app/ibms-brain/` (`ibms-app/CLAUDE.md` imports it on line 1). See `meta/designs/2026-08-ibms-app-brain-submodule-sync.md`. | A change here does not reach `ibms-app` until its submodule pin is bumped — see that design doc's "Consequences" |
+| 2026-08-25 | First engineering repo (`ibms-app`) created as a sibling repo — Next.js + NestJS + Prisma/Postgres + Docker + GitHub Actions + Vercel preview. Deployment target still TBD. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md`. | Clone `ibms-app` (`--recurse-submodules`); read its `README.md`/`CLAUDE.md` for setup |
 | 2026-08-22 | Brain created from the platform-brain-template starter kit, seeded from `IBMS_Full_Scope_Context_Document.docx` and the PRIV-STD/SOP/FRM/SRS compliance package | Run `bash scripts/brain-setup.sh` |
 
 ---
@@ -66,6 +67,8 @@ meta/templates/   PR, ticket, and doc templates.
 **IBMS and the PCMS (Privacy Compliance Management System) are one system, not two.** PCMS is the source of truth for every privacy/consent/retention/breach/DSR rule; IBMS's compliance module consumes PCMS decisions and feeds it data (customers, policies, claims) — it must never re-derive or duplicate a privacy rule. See `meta/designs/2026-08-pcms-source-of-truth.md`.
 
 `ibms-app` is a Next.js (web) + NestJS (api) + PostgreSQL/Prisma monorepo. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md` for why, including the Prisma 6-vs-7 and repo-split calls. No call-direction / auth-boundary / system-of-record decision beyond "web calls api" has been made yet. **Do not invent one.** Record it here the day it's decided.
+
+`ibms-app` vendors this repo as a pinned git submodule (`ibms-app/ibms-brain/`) rather than restating any rule — see `meta/designs/2026-08-ibms-app-brain-submodule-sync.md`. This repo has no reverse dependency on `ibms-app` and does not need one.
 
 ---
 
