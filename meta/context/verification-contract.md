@@ -1,6 +1,6 @@
 # Verification contract — what "working" means here
 
-**Last verified:** 2026-08-24 · **Owner:** shouq
+**Last verified:** 2026-08-25 · **Owner:** shouq
 
 > This is the most valuable verification file in the brain. Without it, an agent invents its own standard of "done" — and it will be lower than yours.
 >
@@ -24,19 +24,20 @@ The IBMS engineering stack is:
 | Backend | Node.js + TypeScript |
 | Database | PostgreSQL |
 
-The following are not finalized yet and must be filled in when the engineering repository is established:
+The following were finalized when `ibms-app` was created (2026-08-25 — see
+`meta/designs/2026-08-ibms-app-stack-and-repo-split.md`):
 
-| Area | Status |
+| Area | Choice |
 |---|---|
 | Frontend test framework | Vitest + Testing Library |
 | Backend test framework | Vitest |
 | E2E framework | Playwright |
 | Accessibility tooling | axe-core |
 | Database migration tooling | Prisma Migrate |
-| API contract testing | OpenAPI |
+| API contract testing | OpenAPI — **not yet implemented** |
 | Containerization | Docker |
-| Preview environment | Vercel |
-| Deployment platform | none yet |
+| Preview environment | Vercel — configured, not yet connected to a live project |
+| Deployment platform | still **TBD** — see `ibms-app/README.md` § Deployment |
 
 **Do not invent a command for a gate that does not exist yet.**
 
@@ -44,38 +45,39 @@ The following are not finalized yet and must be filled in when the engineering r
 
 # Every change
 
+All commands below run from the `ibms-app` repo root (Turborepo fans them out per
+workspace) unless noted otherwise.
+
 | Gate | Command | Evidence |
 |---|---|---|
-| Brain health | `bash scripts/brain-doctor.sh` | exit 0 |
+| Brain health | `bash scripts/brain-doctor.sh` (this repo) | exit 0 |
 | No unfilled placeholders | part of brain-doctor | 0 unfilled fill-markers outside `_TEMPLATE.md` files |
-| Type checking | `npm run typecheck` | exit 0 — once script exists |
-| Lint | `npm run lint` | exit 0 — once script exists |
-| Unit tests | `npm test` | exit 0 + test count — once script exists |
-| Build | `npm run build` | exit 0 — once script exists |
+| Type checking | `npm run typecheck` | exit 0 |
+| Lint | `npm run lint` | exit 0 |
+| Unit tests | `npm run test` | exit 0 + test count |
+| Build | `npm run build` | exit 0 |
 | Regulatory traceability | Manual | citation present in PR/ticket description |
-| Evidence generation | CI artifact | artifact exists for the commit SHA |
+| Evidence generation | CI artifact | artifact exists for the commit SHA — CI does not yet independently enforce this, see `meta/lex/definition-of-done.md` |
 
-The exact executable commands become authoritative when the engineering repository and CI pipeline are created. If the repository uses different script names, update this contract instead of inventing aliases.
+If `ibms-app` renames a script, update this contract instead of inventing an alias.
 
 ---
 
-# Once the engineering repository exists
+# Backend/frontend gate commands (ibms-app)
 
-The first repository-creation PR must establish the real commands for:
-
-| Gate | Required evidence |
-|---|---|
-| Types | exit 0 |
-| Lint | exit 0 |
-| Unit tests | exit 0 + test count |
-| Build | exit 0 |
-| Integration tests | exit 0 |
-| E2E | exit 0 |
-| Accessibility | 0 serious/critical violations |
-| Security tests | exit 0 |
-| Database migrations | exit 0 |
-| Database schema tests | exit 0 |
-| Smoke tests | exit 0 |
+| Gate | Command | Evidence |
+|---|---|---|
+| Types | `npm run typecheck` | exit 0 |
+| Lint | `npm run lint` | exit 0 |
+| Unit tests | `npm run test` | exit 0 + test count |
+| Build | `npm run build` | exit 0 |
+| Integration tests (API) | `npm run test:e2e` | exit 0 — needs a reachable `DATABASE_URL` |
+| E2E (web) | `npm run e2e` | exit 0 |
+| Accessibility | axe-core, run as part of `npm run e2e` | 0 serious/critical violations |
+| Security tests | **not yet implemented** — no `test:security` script exists | — |
+| Database migrations | `npm run db:migrate:deploy` (CI/prod) / `npm run db:migrate:dev` (local) | exit 0 |
+| Database schema tests | **not yet implemented** | — |
+| Smoke tests | **not yet implemented** — no service has a `scripts/smoke.sh` yet (see § Backend services below) | — |
 
 These rows must be updated in the same commit that creates the relevant engineering capability.
 

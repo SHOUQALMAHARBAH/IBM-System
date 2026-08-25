@@ -15,6 +15,7 @@ Workspace instructions. Loaded into every Claude Code session in this repo and i
 
 | Date | Change | Action required |
 |------|--------|-----------------|
+| 2026-08-25 | `meta/lex/definition-of-done.md`'s path-glob placeholder is filled in with `ibms-app`'s real structure (`apps/web`, `apps/api`, `packages/db`); `meta/context/verification-contract.md` gate commands updated to match. | Re-read `meta/lex/definition-of-done.md` before your next `ibms-app` PR — it names real path globs now, not a placeholder |
 | 2026-08-25 | `ibms-app` pushed to [github.com/SHOUQALMAHARBAH/IBMS-APP](https://github.com/SHOUQALMAHARBAH/IBMS-APP) and now vendors this repo as a pinned git submodule at `ibms-app/ibms-brain/` (`ibms-app/CLAUDE.md` imports it on line 1). See `meta/designs/2026-08-ibms-app-brain-submodule-sync.md`. | A change here does not reach `ibms-app` until its submodule pin is bumped — see that design doc's "Consequences" |
 | 2026-08-25 | First engineering repo (`ibms-app`) created as a sibling repo — Next.js + NestJS + Prisma/Postgres + Docker + GitHub Actions + Vercel preview. Deployment target still TBD. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md`. | Clone `ibms-app` (`--recurse-submodules`); read its `README.md`/`CLAUDE.md` for setup |
 | 2026-08-22 | Brain created from the platform-brain-template starter kit, seeded from `IBMS_Full_Scope_Context_Document.docx` and the PRIV-STD/SOP/FRM/SRS compliance package | Run `bash scripts/brain-setup.sh` |
@@ -113,7 +114,7 @@ Loaded from `meta/lex/`. Enforcement level is stated in each file.
 
 ## What "working" means
 
-`meta/context/verification-contract.md` defines the gates every change must pass and the evidence each produces. Run them with `bash scripts/verify.sh`. Claims are not evidence — exit codes and screenshots are. **Today, the only real gate is `bash scripts/brain-doctor.sh`** — there is no codebase to type-check, lint, or test yet. Do not deploy to production; open a PR with evidence attached and let a human merge.
+`meta/context/verification-contract.md` defines the gates every change must pass and the evidence each produces. Run them with `bash scripts/verify.sh`. Claims are not evidence — exit codes and screenshots are. **In this repo, the only real gate is `bash scripts/brain-doctor.sh`** — it stays documentation-only. For `ibms-app` changes, real gates now exist: `npm run typecheck|lint|test|build|test:e2e|e2e` — see `meta/context/verification-contract.md` § Backend/frontend gate commands. Do not deploy to production; open a PR with evidence attached and let a human merge.
 
 Path-scoped rules live in `.claude/rules/` and load themselves when you touch matching files — none exist yet because there is no code to scope them to.
 

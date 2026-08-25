@@ -2,7 +2,7 @@
 
 The shared brain for the **Insurance Brokerage Management System (IBMS)** build program — a system for a licensed insurance/reinsurance broker operating in Jordan, aligned to CBJ insurance regulation, Jordan's Personal Data Protection Law No. 24 of 2023 (PDPL), and ISO/IEC 27001 + 27701.
 
-This is **not** a monorepo of services — no engineering repo exists yet. This repo is what every future service repo will inherit: the standards, agent definitions, architecture decisions, and domain knowledge extracted from the approved business context and privacy-compliance documents.
+This repo is not itself a monorepo of services — the engineering codebase lives in the sibling [`ibms-app`](https://github.com/SHOUQALMAHARBAH/IBMS-APP) repo, which vendors this repo as a pinned git submodule. This repo is what `ibms-app` (and any future service repo) inherits: the standards, agent definitions, architecture decisions, and domain knowledge extracted from the approved business context and privacy-compliance documents.
 
 > Unlike the starter kit's default flow, this brain was **not** filled from PR review history — there isn't any yet. It was filled from `IBMS_Full_Scope_Context_Document.docx` (the master business/regulatory scope) and the already-approved PCMS compliance package (`PRIV-STD-01..04`, `PRIV-SOP-01..10`, `PRIV-FRM-01..10`, `PRIV-SRS-01/02`). See `CLAUDE.md` § What this brain is for.
 
