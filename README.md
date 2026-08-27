@@ -91,9 +91,12 @@ No repo/service split exists yet. The two module groups this brain currently gov
 |----------|----------------|
 | [`meta/lex/money-decimal-jod.md`](meta/lex/money-decimal-jod.md) | Decimal arithmetic on premium/commission/claim amounts |
 | [`meta/lex/workflow-state-transitions.md`](meta/lex/workflow-state-transitions.md) | Status fields only change through a transition function |
+| [`meta/lex/race-safe-invariants.md`](meta/lex/race-safe-invariants.md) | A "one of these / only once" invariant is a DB constraint or a status-conditional write, never a check-then-act |
 | [`meta/lex/maker-checker-segregation.md`](meta/lex/maker-checker-segregation.md) | No self-approval on KYC, policy checking, refunds, disposal, DSR closure |
 | [`meta/lex/sensitive-data-handling.md`](meta/lex/sensitive-data-handling.md) | Highly Confidential data handling |
 | [`meta/lex/pdpl-sla-timers.md`](meta/lex/pdpl-sla-timers.md) | Statutory SLA timers are tracked data, not documentation |
+| [`meta/lex/backup-rpo-rto.md`](meta/lex/backup-rpo-rto.md) | Encrypted backups + a tested restore drill (RPO/RTO values still draft) |
+| [`meta/lex/kyc-aml-sla-timers.md`](meta/lex/kyc-aml-sla-timers.md) | KYC review turnaround + re-KYC cadence are tracked deadlines (CBJ AML domain; values draft) |
 | [`meta/lex/workspace-updates.md`](meta/lex/workspace-updates.md) | Keeping this repo's own docs current |
 | [`meta/lex/brain-freshness.md`](meta/lex/brain-freshness.md) | Session-start sync |
 | [`meta/lex/code-review.md`](meta/lex/code-review.md) | Review format, finding codes, severity |
