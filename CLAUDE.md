@@ -15,11 +15,11 @@ Workspace instructions. Loaded into every Claude Code session in this repo and i
 
 | Date | Change | Action required |
 |------|--------|-----------------|
-| 2026-08-25 | `meta/lex/definition-of-done.md` § How it is enforced's CI paragraph replaced with the real `frontend`/`backend`/`docker` job breakdown from `ibms-app/.github/workflows/ci.yml` (it previously described a single `test` job that never existed under that name). | Re-read `meta/lex/definition-of-done.md` before citing "CI enforces this" as evidence in a PR — it still does not enforce the evidence-artifact rule itself |
 | 2026-08-25 | `ibms-app` CI split into `frontend`/`backend` GitHub Actions jobs; three previously-"not yet implemented" gates in `meta/context/verification-contract.md` are now real: Security tests (`npm run test:security` — dependency audit), Contract tests (`npm run test:contract` — OpenAPI, generated from `@nestjs/swagger` decorators, validated with `ajv`), Smoke tests (`apps/api/scripts/smoke.sh`). Accessibility split out of `npm run e2e` into its own `npm run test:a11y` gate. | Re-read `meta/context/verification-contract.md` § Backend/frontend gate commands before citing an "implemented" column as evidence in a PR |
 | 2026-08-25 | `meta/lex/definition-of-done.md`'s path-glob placeholder is filled in with `ibms-app`'s real structure (`apps/web`, `apps/api`, `packages/db`); `meta/context/verification-contract.md` gate commands updated to match. | Re-read `meta/lex/definition-of-done.md` before your next `ibms-app` PR — it names real path globs now, not a placeholder |
 | 2026-08-25 | `ibms-app` pushed to [github.com/SHOUQALMAHARBAH/IBMS-APP](https://github.com/SHOUQALMAHARBAH/IBMS-APP) and now vendors this repo as a pinned git submodule at `ibms-app/ibms-brain/` (`ibms-app/CLAUDE.md` imports it on line 1). See `meta/designs/2026-08-ibms-app-brain-submodule-sync.md`. | A change here does not reach `ibms-app` until its submodule pin is bumped — see that design doc's "Consequences" |
 | 2026-08-26 | New `meta/lex/backup-rpo-rto.md` — draft RPO (24h)/RTO (15min) targets for `ibms-app`, enforced by a real weekly restore-drill script (`ibms-app/scripts/backup-restore-drill.sh` + `.github/workflows/backup-drill.yml`), landed alongside `ibms-app` backlog A.9 (data masking/leakage prevention) and A.10 (SAST/DAST, env separation, backups). | Re-read `meta/lex/backup-rpo-rto.md` before citing an RPO/RTO figure — they're drafts pending business-continuity sign-off, not confirmed numbers |
+| 2026-08-26 | New `meta/lex/kyc-aml-sla-timers.md` — filed via `/brain-gap` while building `ibms-app` backlog Part C #3-4 (Customer Acquisition/Onboarding): `meta/lex/pdpl-sla-timers.md`'s 14-entry registry is entirely PDPL-sourced and has no row for CBJ AML/KYC compliance-review turnaround or periodic re-KYC cadence (a different regulatory domain). Four draft, unsourced figures now tracked in code (`ibms-app`'s `sla-registry.config.ts`/`kyc.service.ts`) pending a real CBJ AML source document. | Re-read `meta/lex/kyc-aml-sla-timers.md` before citing a KYC/EDD review SLA or re-KYC cadence figure — all four are drafts pending a real source, not confirmed numbers |
 
 ---
 
@@ -107,6 +107,7 @@ Loaded from `meta/lex/`. Enforcement level is stated in each file.
 | `sensitive-data-handling.md` | Highly Confidential data (medical, financial, national ID, UBO) never logged/exported/shared unencrypted |
 | `pdpl-sla-timers.md` | Every statutory SLA (consent withdrawal, DSR, breach containment, disposal) is a tracked deadline, not documentation |
 | `backup-rpo-rto.md` | Encrypted backups + an actually-tested restore drill, not backup-only assurance |
+| `kyc-aml-sla-timers.md` | KYC compliance-review turnaround + periodic re-KYC cadence are tracked deadlines (CBJ AML domain, not PDPL) — values currently draft/unsourced |
 | `code-review.md` | Review format and severity levels |
 | `definition-of-done.md` | No push without evidence from the verification contract |
 | `workspace-updates.md` | Keeping this file and README current |
