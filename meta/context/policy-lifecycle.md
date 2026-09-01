@@ -1,6 +1,6 @@
 # Policy lifecycle — from Opportunity to Renewal
 
-**Last verified:** 2026-08-29 · **Owner:** unassigned
+**Last verified:** 2026-09-01 · **Owner:** unassigned
 
 ## What this is
 
@@ -42,6 +42,8 @@ Client decision branches at two points and each routes differently: **Accept as 
 - **A mid-cycle risk change since the last renewal** (new location, headcount growth) **triggers a fresh Risk Assessment before the renewal RFQ is issued** — a renewal is not automatically a roll-over of the last Risk Assessment.
 - **Renewal terms declined or materially worsened by the insurer trigger full re-marketing** (a new RFQ to alternate insurers), not a simple roll-over attempt with the same insurer.
 - **An RFQ follow-up threshold lapsing auto-marks the silent insurer's submission `NO_RESPONSE`** — it is not only an alert for a human to action. Each `RFQ` carries a configurable `followUpThresholdDays` (default 9), counted in Jordan business days from each `RFQInsurer.sentAt`; the nightly follow-up sweep (Process 12, Market Placement) stamps the alert *and* advances a still-`SENT`/`VIEWED` submission to `NO_RESPONSE` through the workflow engine. This is a status change by a system actor, so it is race-conditional: an insurer response landing first makes the auto-move a no-op. `NO_RESPONSE` is **not terminal** — a late-responding insurer can still be moved `NO_RESPONSE → QUOTED / DECLINED`. Source: no CBJ/Part-3.3 document specifies the turnaround or the auto-vs-alert choice — the threshold default and the auto-advance are `ibms-app` product decisions (backlog Part C #11–12), draft pending a real market-practice figure.
+
+  - **"Silent" is decided against the `Quotation` table too, not `RFQInsurer.status` alone.** Capturing an insurer's quote (backlog Part C #13, `QuotationService`) writes a `Quotation` row directly and *best-effort* moves the matching `RFQInsurer` `→ QUOTED` — but that transition is logged, never thrown, so a race or a transient failure can leave the submission `SENT`/`VIEWED` while a current `Quotation` for its `(rfqId, insurerId)` already exists. The follow-up sweep must **skip any submission that has a current `Quotation`** — an insurer that quoted is not silent, even if its status column has not caught up. Generalised: **`RFQInsurer.status` is not the authoritative "has this insurer quoted?" signal — the `Quotation` table is** (`QuotationService` documents the same rule on its own side). If the sweep ignores this, a genuinely-quoted insurer is mislabelled `NO_RESPONSE` until someone revises the quote; the damage is bounded (`NO_RESPONSE → QUOTED / DECLINED` is legal, and downstream Comparison #14 / Recommendation #16 read the `Quotation` table, not the status column) but the status column is then wrong. `ibms-app` product decision (Part C #13), no source document.
 
 ## Where the code lives
 
