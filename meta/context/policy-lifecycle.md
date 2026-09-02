@@ -67,4 +67,4 @@ Nothing yet — no engineering repo exists.
 
 ## Out of scope for this file
 
-Needs Assessment and Risk Assessment (pre-Opportunity) — Part 3.2 of the context document; not yet split into its own file, add one the first time this area causes a real gap. Claims handling — `meta/context/claims-lifecycle.md`. Commission calculation mechanics and financial reconciliation — Part 3.6 of the context document; not yet split into its own file.
+Needs Assessment and Risk Assessment (pre-Opportunity) — Part 3.2 of the context document; not yet split into its own file, add one the first time this area causes a real gap. Claims handling — `meta/context/claims-lifecycle.md`. Premium billing / collection / remittance and the rest of Finance (Domain D, Processes 31–40) — `meta/context/finance-lifecycle.md` (Process 31 built; the rest still Part 3.6 of the context document until they land).
