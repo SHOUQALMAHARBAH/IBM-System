@@ -1,6 +1,6 @@
 # Finance lifecycle
 
-**Last verified:** 2026-09-02 · **Owner:** shouq
+**Last verified:** 2026-09-03 · **Owner:** shouq
 
 ## What this is
 
@@ -11,8 +11,8 @@ Processes 31–40. Source: `IBMS_Full_Scope_Context_Document.docx` Part 3.6.
 Policy placement/issuance/endorsement is `meta/context/policy-lifecycle.md`;
 claims payouts are `meta/context/claims-lifecycle.md`.
 
-Only **Process 31 (Premium Billing)** is built in `ibms-app` so far — the rest
-of this file will grow as #32–40 land.
+**Processes 31 (Premium Billing) and 32 (Collection)** are built in `ibms-app`
+so far — the rest of this file will grow as #33–40 land.
 
 ## The shapes
 
@@ -30,14 +30,29 @@ Invoice
   dueDate: DateTime
   status: InvoiceStatus                  # INVOICED (#31 creates here) → COLLECTED → RECONCILED → REMITTED, + EXCEPTION_RAISED/RESOLVED (#32/#39)
 
-Invoice is a WorkflowTransitionService entity (WORKFLOW_TRANSITIONS.Invoice),
-but #31 only CREATES it at the schema @default(INVOICED) — no status write.
-The INVOICED → COLLECTED cycle is Process 32.
+Invoice is a WorkflowTransitionService entity (WORKFLOW_TRANSITIONS.Invoice).
+#31 CREATES it at the schema @default(INVOICED) — no status write. #32 drives
+every subsequent hop through the engine.
+
+Receipt        n..1 Invoice   # #32 records exactly one, for the full total
+  amount: Decimal(18,3)       # MUST equal Invoice.totalAmount
+  method: string?             # bank_transfer | cheque | card | cash
+  receivedAt: DateTime
+Remittance      1..1 Receipt  # receiptId @unique
+  insurerId: string           # from Policy.insurerId
+  amount: Decimal(18,3)       # ALWAYS premiumAmount − commissionDeducted, computed
+  remittedAt: DateTime?
+ClientFundsLedgerEntry  n..1 Customer   # Part 7.3 — one per money movement
+  amount / direction ('in' on receipt, 'out' on remittance)
+  reference: string           # 'invoice:<id>' pointer, never free text
 ```
 
-Endpoints (`ibms-app`): `POST /invoices` (`invoice.create` / Finance),
-`GET /invoices?policyId=|customerId=` and `GET /invoices/:id`
-(`client-accounting.read` / Finance, Manager, Exec, Auditor).
+Endpoints (`ibms-app`): `POST /invoices` (`invoice.create` / Finance);
+`POST /invoices/:id/receipt` + `POST /invoices/:id/reconcile`
+(`receipt.record` / Finance); `POST /invoices/:id/remittance`
+(`remittance.record` / Finance); `GET /invoices?policyId=|customerId=` and
+`GET /invoices/:id` (`client-accounting.read` / Finance, Manager, Exec,
+Auditor).
 
 ## The rules that aren't obvious
 
@@ -95,25 +110,85 @@ due date" and nothing more precise.)*
   Highly Confidential — same tier as `Policy` premium, which #18–21 also do not
   audit on read).
 
+### Collection (Process 32)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #32 — Part
+3.6 says only "the full Invoice → Collection → Receipt → Reconciliation →
+Remittance cycle".)*
+
+- **Every `Invoice` status move goes through `WorkflowTransitionService
+  .transition`** — `INVOICED → COLLECTED` (receipt), `COLLECTED → RECONCILED`
+  (reconcile), `RECONCILED → REMITTED` (remittance), one hop per endpoint,
+  matching `WORKFLOW_TRANSITIONS.Invoice`. The status-conditional `updateMany`
+  in the engine is the "one receipt / one remittance per invoice" race gate —
+  there is no separate `@unique` on `Receipt.invoiceId` and none is needed.
+  The `Receipt` / `Remittance` / `ClientFundsLedgerEntry` artefacts are written
+  **after** the transition commits (the #24 `register` pattern): a lost race
+  reloads and resumes/409s; a crash between the transition and the artefact
+  (`COLLECTED` with no `Receipt`) is a re-entry that writes only the artefact.
+- **#32 supports one full-payment receipt per invoice.** `Receipt.amount`
+  **must equal `Invoice.totalAmount` exactly** (`compareMoney === 0`) — a
+  partial or over payment is a **422**. This is the `money-decimal-jod.md`
+  "a reconciliation mismatch is raised as an exception, never silently written
+  off" rule applied at the door: the variance / investigation path is Process
+  39 (`ReconciliationException`), not a silent short-collect here. Partial
+  payments (multiple receipts summing to the total) are a deferred refinement.
+- **Reconcile re-derives from the live rows.** `sumMoney(receipts) ===
+  totalAmount` is recomputed from the loaded `Receipt` rows at the reconcile
+  call — never a stored snapshot (the #16 "re-check the gate at the decision
+  point" rule). A mismatch is a 422; an already-`RECONCILED` / `REMITTED`
+  invoice is an idempotent 200.
+- **The remittance is `premiumAmount − commissionDeducted`, computed server-
+  side** (`subtractMoney`, `>= 0` since #31 bounds commission ≤ premium). Tax
+  and fees stay with the broker (to the tax authority / retained — out of #32
+  scope). `insurerId` comes from `Policy.insurerId`; a non-policy invoice
+  (`policyId IS NULL`) → 422. The figures are fully deterministic, so a
+  re-`POST` is an idempotent no-op — a stored `Remittance` whose amount /
+  insurer disagrees is a **409** (never a silent resume). `Remittance.receiptId
+  @unique` + `P2002` → 409 backstops a concurrent create.
+- **Client-money segregation (Part 7.3).** Every collection books an `in`
+  `ClientFundsLedgerEntry` and every remittance an `out` one, each written in
+  the **same `$transaction`** as its `Receipt` / `Remittance` (a deliberate
+  local exception to the no-`$transaction` convention, same rationale as
+  `PolicyRepository.createIssuanceArtifacts`), so a crash can never leave a
+  money movement with no matching ledger row. `reference` is an `invoice:<id>`
+  pointer.
+- **No maker/checker.** Recording a receipt / reconciling / remitting are
+  Finance/Collections single-actor duties (`roles-and-segregation-of-duties.md`
+  — the Finance maker/checker pair is refunds / write-offs, #22/#37). Moving
+  client money out to an insurer is mechanical and non-discretionary
+  (`premium − commission`), not an approval.
+- Audit: a `CREATE` row for each of `Receipt` / `Remittance` /
+  `ClientFundsLedgerEntry` — ids + the amount as a fixed 3dp string + method /
+  insurer / direction, no free text; plus the engine's `TRANSITION` rows
+  (exactly three across the full cycle). Best-effort (`safeAudit`) — the money
+  write has already committed.
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
-  `invoiceFiguresMatch`, `deriveInvoiceView`, `invoiceAuditSnapshot`, the
-  drafted `INVOICE_MAX_DUE_DAYS_AHEAD` / `NEW_BUSINESS_PREMIUM_INVOICE_TYPE`.
-- `apps/api/src/modules/finance/invoice.service.ts` — the create/get/list
-  orchestration, `parseDueDate`.
-- `apps/api/src/repositories/invoice.repository.ts` — `Invoice` reads/writes.
+  `invoiceFiguresMatch`, `deriveInvoiceView`, the audit snapshots, the drafted
+  `INVOICE_MAX_DUE_DAYS_AHEAD` / `NEW_BUSINESS_PREMIUM_INVOICE_TYPE`;
+  `computeRemittanceAmount`, `RECEIPT_METHODS`.
+- `apps/api/src/modules/finance/invoice.service.ts` — the #31 create/get/list
+  orchestration.
+- `apps/api/src/modules/finance/collection.service.ts` — the #32 cycle
+  (`recordReceipt` / `reconcile` / `recordRemittance`).
+- `apps/api/src/repositories/invoice.repository.ts` — `Invoice` + cycle reads,
+  the `recordReceiptWithLedger` / `recordRemittanceWithLedger` `$transaction`
+  writes.
 - `packages/db/prisma/migrations/20260902210000_add_premium_billing_invoice/` —
-  the `invoiceType` column + the partial `UNIQUE`.
+  the `invoiceType` column + the partial `UNIQUE`. #32 needs no migration.
 - `apps/web/components/policy/FinanceSection.tsx` — the "Billing" block on the
-  opportunity detail screen.
+  opportunity detail screen (raise + the three cycle actions).
 
 ## Out of scope for this file
 
-Collection / Receipt / Remittance / Reconciliation (#32), client & insurer
-accounting/ageing reads (#33–34), commission agreements & the ledger (#35–36),
-refunds (#37, covered under `policy-lifecycle.md`'s endorsement section),
-payment channels (#38), bank reconciliation exceptions (#39), and financial
-reporting (#40). Add each as its own section here as it is built. The commission
-*rate* mechanics and the reconciliation-variance rule live in Part 3.6 of the
-context document until #35/#39 justify splitting them out.
+Client & insurer accounting/ageing reads (#33–34), commission agreements & the
+ledger (#35–36), refunds (#37, covered under `policy-lifecycle.md`'s
+endorsement section), payment channels (#38), bank reconciliation exceptions
+(#39 — the `ReconciliationException` model + the investigate/resolve path, and
+the `EXCEPTION_RAISED` / `EXCEPTION_RESOLVED` `Invoice` states), and financial
+reporting (#40). Add each as its own section here as it is built. The
+commission *rate* mechanics live in Part 3.6 of the context document until #35
+justifies splitting them out.
