@@ -23,7 +23,7 @@ The current SLA registry (all sourced from `PRIV-SRS-01` §5, cross-checked agai
 | Material incident — Senior Management notification (M09) | 1 hour from Material classification | — |
 | DPIA screening review (M10) | 5 business days if any screening question is "Yes" | — |
 | Renewal workflow start | 90 days before expiry (default, configurable) | Escalates to Customer Retention on inactivity |
-| Claim follow-up (insurer non-response) | Configurable per line, e.g. 9 days | Auto-generated follow-up alert |
+| Claim follow-up (insurer non-response) | Per broad line family (Jordan business days from the claim's `REGISTERED` timestamp): `ibms-app`'s drafted `CLAIM_FOLLOWUP_THRESHOLD_DAYS_BY_FAMILY` — `motor` 7 / `property` 10 / `medical` 7 / `liability` / `marine` 15 / else 9 (the Part 3.7 worked example). **The non-9 values are drafted / unsourced** (no per-line table in Part 3.7) — same status as `CLAIM_LARGE_THRESHOLD_JOD` / #16's 10 % / 2 pp; replace with sourced figures when a broker authority matrix / SOP supplies them. See `meta/context/claims-lifecycle.md` § insurer non-response (Process 27). | Auto-generated `ClaimFollowUpAlert` (nightly + on-demand sweep) |
 
 ## What triggers this rule
 
