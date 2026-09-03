@@ -15,6 +15,7 @@ A file or record combining multiple classification levels is classified and prot
 - Any export, print, or download feature touching a Highly Confidential field without watermarking/DLP controls (Part 10.6)
 - Any data share (M08 — `meta/context/pcms-privacy-modules.md`) where the picked channel is not on the approved secure-channel list for that classification
 - List views showing a full national ID, full card number, or full bank account number instead of a masked value
+- A free-text "note" / "detail" / "reason" field sitting next to a masked-data path being left as the *de facto* capture point for that data class. If the system holds bank/card data only as a masked reference (e.g. `PaymentChannel.accountLast4`, Process 38), a free-text field that a user could reasonably type a full account/card number into (a "change my payment details" service request, a refund reason, a claim note) must carry an input guard that rejects a full number and steers the user to the masked, governed path. The structured masked record is the capture point; the note field is not.
 
 ## What does NOT trigger this rule
 
@@ -27,7 +28,7 @@ A file or record combining multiple classification levels is classified and prot
 
 **Hook:** `.claude/hooks/enforce-sensitive-data.sh` — `PreToolUse` on `Write|Edit`, exits 2 on a logging call interpolating a variable whose name matches `national_id|nationalId|bank_account|card_number|cvv|medical|health_report|clinical`. Tune the keyword list to the real field names in the data dictionary (`PRIV-SRS-02_Data_Dictionary_and_Entity_Model.xlsx`) once schema design starts.
 
-**Review gate:** `@code-reviewer` is mandatory on any code touching claims documentation, KYC document capture, or payment/bank data (see `CLAUDE.md` § Agents).
+**Review gate:** `@code-reviewer` is mandatory on any code touching claims documentation, KYC document capture, or payment/bank data (see `CLAUDE.md` § Agents). This review also checks that any new free-text field adjacent to a masked-data path carries the "no full account/card number" input guard described above — a regex rejecting a long digit run is the minimum, with an error message that names the governed masked path (`PaymentChannel` for payment details).
 
 ## Rationale
 
