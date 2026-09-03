@@ -11,9 +11,9 @@ Processes 31–40. Source: `IBMS_Full_Scope_Context_Document.docx` Part 3.6.
 Policy placement/issuance/endorsement is `meta/context/policy-lifecycle.md`;
 claims payouts are `meta/context/claims-lifecycle.md`.
 
-**Processes 31 (Premium Billing), 32 (Collection) and 33 (Client Accounting)**
-are built in `ibms-app` so far — the rest of this file will grow as #34–40
-land.
+**Processes 31 (Premium Billing), 32 (Collection), 33 (Client Accounting) and
+34 (Insurer Accounting)** are built in `ibms-app` so far — the rest of this
+file will grow as #35–40 land.
 
 ## The shapes
 
@@ -54,7 +54,9 @@ Endpoints (`ibms-app`): `POST /invoices` (`invoice.create` / Finance);
 (`remittance.record` / Finance); `GET /invoices?policyId=|customerId=` and
 `GET /invoices/:id` (`client-accounting.read` / Finance, Manager, Exec,
 Auditor); `GET /client-accounting/ageing?customerId=|asOf=`
-(`client-accounting.read`) — the #33 AR / ageing report.
+(`client-accounting.read`) — the #33 AR / ageing report;
+`GET /insurer-accounting/payables?insurerId=|asOf=`
+(`insurer-accounting.read`) — the #34 AP / remittance-obligations report.
 
 ## The rules that aren't obvious
 
@@ -215,6 +217,54 @@ Remittance cycle".)*
   or averaged figure. No migration, no seed change (`client-accounting.read`
   pre-existed).
 
+### Insurer Accounting (Process 34)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #34 — Part
+3.6 says only "accounts-payable / remittance obligations per insurer".)*
+
+- **`GET /insurer-accounting/payables?insurerId=&asOf=`**
+  (`insurer-accounting.read`) returns the AP report — one row per insurer with
+  `outstandingAmount` (what the broker owes it right now), `remittedAmount`
+  (paid to date), the counts, and `oldestDaysOutstanding` (how long the oldest
+  unremitted obligation has sat), plus a `totals` row. The insurer-side mirror
+  of #33; **computed on the fly, no stored aggregate**.
+- **The obligation arises at collection, is discharged by the `Remittance`.**
+  An **outstanding** obligation is a *collected-but-not-yet-remitted* invoice —
+  a `Receipt` exists (the client paid) but no `Remittance` has been recorded
+  (#32's `RECONCILED → REMITTED` hop hasn't run). The broker is holding client
+  money that belongs to the insurer (Part 7.3). It is **not** read from a
+  `Remittance` row — #32 only creates a `Remittance` *after* the transfer, and
+  always stamps `remittedAt`, so a `Remittance` row means *settled*.
+- **The amount owed per invoice is `premiumAmount − commissionDeducted`** —
+  `computeRemittanceAmount`, exactly #32's `Remittance.amount` and what the
+  eventual `Remittance` will carry (tax + fees stay with the broker). Derived
+  in the pure builder, never re-typed. The **remitted** side is straight from
+  the `Remittance.amount`s.
+- **`asOf`** (bare `YYYY-MM-DD`, today or earlier — a future `asOf` → 422;
+  default today) makes both sides point-in-time correct: a `Receipt` counts as
+  collected when `receivedAt < asOf+1d`, a `Remittance` as remitted when
+  `remittedAt < asOf+1d`, and an invoice is *outstanding as at `asOf`* when it
+  was collected by then and its `Remittance` (if any) came after. The repo
+  filter is one `where` on the `receipts` relation:
+  `{ some: { receivedAt: { lt: X } }, none: { remittance: { remittedAt: { lt: X } } } }`
+  (the cycle is 1:1:1). Non-policy invoices (`policyId IS NULL`) are skipped —
+  no insurer to owe.
+- **No ageing buckets** — #34's backlog line is "a query / obligations per
+  insurer", not "an ageing query" like #33. A single `outstandingAmount` +
+  `oldestDaysOutstanding` (whole UTC days since the earliest unremitted
+  `Receipt.receivedAt`, `daysOverdue` reused; `-1` when nothing is
+  outstanding). `Insurer.creditTermsDays` (a grace period before the
+  remittance is "due") is **not** factored in — a deferred refinement.
+- **Book-wide** (`insurer-accounting.read` = `[FINANCE_COLLECTIONS_OFFICER,
+  BRANCH_DEPARTMENT_MANAGER, EXECUTIVE_MANAGEMENT, EXTERNAL_AUDITOR]`; the
+  optional `insurerId` just narrows). Rows **worst-first** (largest
+  days-outstanding, then largest amount owed, then insurer name, fixed `en`).
+  Capped at `INSURER_PAYABLES_ROW_LIMIT = 5000` per side (the #30 / #33
+  precedent — `logger.warn` on truncation). **No maker/checker** (a read).
+  **Not audit-logged** — same Confidential tier / #31 decision as #33.
+  Every figure pooled through `sumMoney`. No migration, no seed change
+  (`insurer-accounting.read` pre-existed).
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
@@ -231,6 +281,15 @@ Remittance cycle".)*
 - `apps/web/app/(app)/client-accounting/page.tsx` +
   `apps/web/lib/client-accounting/ageing-api.ts` — the "Client accounting"
   screen.
+- `apps/api/src/modules/finance/insurer-accounting.service.ts` +
+  `insurer-accounting.controller.ts` — the #34 payables report
+  (`GET /insurer-accounting/payables`); `finance.config.ts` gains
+  `buildInsurerPayables` + `INSURER_PAYABLES_ROW_LIMIT`;
+  `invoice.repository.ts` gains `loadInsurerObligations` /
+  `loadInsurerRemittances`.
+- `apps/web/app/(app)/insurer-accounting/page.tsx` +
+  `apps/web/lib/insurer-accounting/payables-api.ts` — the "Insurer accounting"
+  screen.
 - `apps/api/src/modules/finance/invoice.service.ts` — the #31 create/get/list
   orchestration.
 - `apps/api/src/modules/finance/collection.service.ts` — the #32 cycle
@@ -245,8 +304,9 @@ Remittance cycle".)*
 
 ## Out of scope for this file
 
-Insurer accounting/ageing (#34 — accounts-payable / remittance obligations per
-insurer, from `Remittance`), commission agreements & the ledger (#35–36),
+Commission agreements & the ledger (#35–36 — `CommissionAgreement` by insurer +
+line, `CommissionLedgerEntry` rate/amount/tax/paid/outstanding/reversed, the
+manual-override maker/checker),
 refunds (#37, covered under `policy-lifecycle.md`'s endorsement section),
 payment channels (#38), bank reconciliation exceptions (#39 — the
 `ReconciliationException` model + the investigate/resolve path, and the
