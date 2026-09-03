@@ -12,8 +12,9 @@ Policy placement/issuance/endorsement is `meta/context/policy-lifecycle.md`;
 claims payouts are `meta/context/claims-lifecycle.md`.
 
 **Processes 31 (Premium Billing), 32 (Collection), 33 (Client Accounting),
-34 (Insurer Accounting) and 35 (Commission Calculation)** are built in
-`ibms-app` so far — the rest of this file will grow as #36–40 land.
+34 (Insurer Accounting), 35 (Commission Calculation) and 36 (Commission
+Reconciliation)** are built in `ibms-app` so far — the rest of this file will
+grow as #37–40 land.
 
 ## The shapes
 
@@ -339,6 +340,92 @@ logged approval".)*
   seed change** (all four commission perms pre-existed); `vatAmount` stays `0`
   (VAT on commission is #36's "tax implications" line).
 
+### Commission Reconciliation (Process 36)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #36 — Part
+3.6 says only "track rate / amount / tax / paid / outstanding / reversed" on
+`CommissionLedgerEntry".)*
+
+- **VAT on commission is GOVERNED on `CommissionAgreement`, not a global
+  constant.** `CommissionAgreement.vatRatePercent` (migration
+  `20260903130000`, `DECIMAL(5,2)`, default `0`) sits next to `ratePercent`:
+  `commission-rate.manage` (Compliance / Manager) sets it, Finance only
+  applies it (same segregation as the commission rate). `POST
+  /commission/agreements` takes an optional `vatRatePercent` (`0..100`, 422
+  outside; omitted → `0`); a same-rate re-post is idempotent only if **both**
+  `ratePercent` **and** `vatRatePercent` match. The Jordan GST rate on the
+  broker's commission income is otherwise unsourced — the field is the
+  governed home, its value is a business input.
+- **The rate is snapshotted onto the ledger entry at calculate.**
+  `CommissionLedgerEntry.vatRatePercent` (same migration) freezes the
+  governing agreement's `vatRatePercent` when `POST /commission/entries` runs,
+  and `vatAmount = amount × vatRatePercent%` (`computeCommissionVat`,
+  `applyPercentage`) is stamped then — no longer `0`. The invariant `vatAmount
+  == amount × vatRatePercent%` holds after **every** write: an approved manual
+  override recomputes `vatAmount` from `overrideAmount × the frozen rate`
+  (`recordOverrideApproval`'s `data`, derived purely from fields the `where`
+  already pins — no new race surface), and a later edit to the
+  `CommissionAgreement` does **not** disturb a recorded entry.
+  `CommissionLedgerEntryView` gains `vatRatePercent`, a non-zero `vatAmount`,
+  and `grossAmount = amount + vatAmount` (commission incl. VAT).
+- **`status` gets its `outstanding → paid | reversed` lifecycle.**
+  `CommissionLedgerEntry` is **NOT** a `WorkflowTransitionService` entity (its
+  `status` is a plain string, like `ReconciliationException.status`), but the
+  legal moves live in `commission.config.ts`'s `COMMISSION_ENTRY_TRANSITIONS`
+  (`outstanding: [paid, reversed]`, `paid: [reversed]`, `reversed: []`) and
+  every move validates against it, writes an audit row, and persists via a
+  **status-conditional `updateMany`** — never a bare `.status =`
+  (`workflow-state-transitions.md` spirit + `race-safe-invariants.md`).
+- **`outstanding → paid` is `POST /commission/entries/:id/settle`**
+  (`commission.reconcile` — a **new seed perm**, `[FINANCE_COLLECTIONS_OFFICER]`;
+  Finance *applies/settles* the governed figure, it is not an approval, so **no
+  maker/checker** — same call as #32's remittance). `{ statementAmount,
+  paymentReference }`: `statementAmount` **must equal the recorded `amount`
+  exactly** (`compareMoney === 0`) — a variance is a **422** pointing at
+  Process 39's `ReconciliationException`, never a silent short settle
+  (`money-decimal-jod.md` at the door, the #32 rule). A **pending** manual
+  override blocks settlement (422 — the amount is not final); a `reversed`
+  entry cannot be settled (422). Stamps `status = 'paid'`, `paidAmount =
+  amount`, `paidAt`, `paymentReference` (a pointer, not free text). Write-once:
+  a re-`POST` with the same figure **and** reference resumes (200), a different
+  one is a **409**; the status-conditional `updateMany` `where` re-asserts
+  **every** condition the service validated (`race-safe-invariants.md`):
+  `status`, the exact `amount` (a concurrent override-approve → clean 0-row
+  409), "no pending override" (`OR: isManualOverride false |
+  overrideApprovedByUserId not null`), **and** "no Process 22
+  `CommissionReversal` on the policy" as a relation filter
+  (`policy: { endorsements: { none: { commissionReversal: { isNot: null } } } }`)
+  — so a `CommissionReversal` minted concurrently with the settle lands 0 rows
+  → 409, not only the pre-check 422. The `outstanding → paid` move is also
+  asserted against `COMMISSION_ENTRY_TRANSITIONS` in the service.
+- **`{outstanding|paid} → reversed` is driven by Process 22, not an endpoint.**
+  When a cancellation / negative `Endorsement` mints a `CommissionReversal` for
+  the policy (`calculateAdjustment`), the endorsement service **best-effort**
+  calls `CommissionLedgerService.reconcileReversalForPolicy(policyId, actorId)`
+  (the #29 `lossRatio.recomputeForPolicy` precedent — only the actual
+  transitioner, never fails the endorsement flow, the entry may not exist yet).
+  It recomputes `reversedAmount` from **live** rows —
+  `computeReversalState({ entryAmount, reversalAmounts })` pools every
+  `CommissionReversal.amount` on the policy's endorsements, **caps at `amount`**
+  (you cannot reverse more commission than was earned), and `fullyReversed`
+  once the pool meets `amount`. It stamps `reversedAmount` / `reversedAt` /
+  `reversalReason` (a system-generated pointer to the endorsement) and flips
+  `status → reversed` **only when fully clawed back** — a partial cancellation
+  leaves `status = 'outstanding'` with a partial `reversedAmount`. A missed
+  best-effort call self-heals on the next endorsement, and `settle` re-checks
+  the same live gate (422 if any un-reflected reversal exists). `EndorsementModule`
+  imports `CommissionModule` (one-way — no cycle).
+- Audit: `CREATE`/`UPDATE CommissionAgreement` now carry `vatRatePercent`;
+  `CREATE CommissionLedgerEntry` carries `vatRatePercentApplied` + `vatAmount`;
+  `settle` writes an `UPDATE CommissionLedgerEntry` (`settlementAuditSnapshot`
+  — `paidAmount` + the statement `paymentReference`); the reversal reflection
+  writes an `UPDATE` (`reversalAuditSnapshot` — `reversedAmount` + the reason
+  verbatim, a business justification like `overrideReason`).
+- **No commission-reconciliation summary report** (an AP-style
+  outstanding-vs-paid-vs-reversed roll-up by insurer) — that is Financial
+  Reporting (#40). The per-entry lifecycle fields + `GET /commission/entries`
+  are the #36 deliverable.
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
@@ -375,10 +462,26 @@ logged approval".)*
   `packages/db/prisma/migrations/20260903120000_add_commission_calculation/` —
   the partial `UNIQUE` on the open agreement, `CommissionLedgerEntry.policyId
   @unique`, the `overrideAmount` column.
+- Process 36: `commission.config.ts` gains `computeCommissionVat`,
+  `computeReversalState`, `COMMISSION_ENTRY_TRANSITIONS` /
+  `isCommissionEntryTransition`, `settlementAuditSnapshot` /
+  `reversalAuditSnapshot`; `commission-ledger.service.ts` gains `settle` +
+  `reconcileReversalForPolicy`; `commission.repository.ts` gains
+  `recordEntrySettlement` / `recordEntryReversal` /
+  `findCommissionReversalAmountsForPolicy`;
+  `apps/api/src/modules/endorsement/endorsement.service.ts` calls
+  `reconcileReversalForPolicy` best-effort after a `CommissionReversal`.
+  `packages/db/prisma/migrations/20260903130000_add_commission_reconciliation/`
+  — `CommissionAgreement.vatRatePercent`, `CommissionLedgerEntry.vatRatePercent`
+  + `paidAmount` / `paidAt` / `paymentReference` / `reversedAmount` /
+  `reversedAt` / `reversalReason`. **Seed: +`commission.reconcile`
+  `[FINANCE_COLLECTIONS_OFFICER]`.**
 - `apps/web/app/(app)/commission/page.tsx` +
-  `apps/web/lib/commission/commission-api.ts` — the "Commission rates" screen;
+  `apps/web/lib/commission/commission-api.ts` — the "Commission rates" screen
+  (a VAT % column + input at #36);
   `apps/web/components/policy/CommissionSection.tsx` — the per-policy
-  calculate / override / approve block on the opportunity detail screen.
+  calculate / override / approve / **reconcile** block on the opportunity
+  detail screen (VAT + gross + paid/reversed detail at #36).
 - `apps/api/src/modules/finance/invoice.service.ts` — the #31 create/get/list
   orchestration.
 - `apps/api/src/modules/finance/collection.service.ts` — the #32 cycle
@@ -393,9 +496,6 @@ logged approval".)*
 
 ## Out of scope for this file
 
-Commission Reconciliation (#36 — `CommissionLedgerEntry` VAT / tax on
-commission, `paid` / `outstanding` / `reversed` lifecycle tracking; #35 only
-ever creates at `outstanding` with `vatAmount = 0`),
 refunds (#37, covered under `policy-lifecycle.md`'s endorsement section),
 payment channels (#38), bank reconciliation exceptions (#39 — the
 `ReconciliationException` model + the investigate/resolve path, and the
