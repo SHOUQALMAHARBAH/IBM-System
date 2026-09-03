@@ -11,8 +11,9 @@ Processes 31–40. Source: `IBMS_Full_Scope_Context_Document.docx` Part 3.6.
 Policy placement/issuance/endorsement is `meta/context/policy-lifecycle.md`;
 claims payouts are `meta/context/claims-lifecycle.md`.
 
-**Processes 31 (Premium Billing) and 32 (Collection)** are built in `ibms-app`
-so far — the rest of this file will grow as #33–40 land.
+**Processes 31 (Premium Billing), 32 (Collection) and 33 (Client Accounting)**
+are built in `ibms-app` so far — the rest of this file will grow as #34–40
+land.
 
 ## The shapes
 
@@ -52,7 +53,8 @@ Endpoints (`ibms-app`): `POST /invoices` (`invoice.create` / Finance);
 (`receipt.record` / Finance); `POST /invoices/:id/remittance`
 (`remittance.record` / Finance); `GET /invoices?policyId=|customerId=` and
 `GET /invoices/:id` (`client-accounting.read` / Finance, Manager, Exec,
-Auditor).
+Auditor); `GET /client-accounting/ageing?customerId=|asOf=`
+(`client-accounting.read`) — the #33 AR / ageing report.
 
 ## The rules that aren't obvious
 
@@ -164,12 +166,71 @@ Remittance cycle".)*
   (exactly three across the full cycle). Best-effort (`safeAudit`) — the money
   write has already committed.
 
+### Client Accounting (Process 33)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #33 — Part
+3.6 says only "an accounts-receivable / ageing report per customer".)*
+
+- **`GET /client-accounting/ageing?customerId=&asOf=`**
+  (`client-accounting.read`) returns the AR / ageing report — one row per
+  customer with an outstanding balance, each split into `current` / `d1_30` /
+  `d31_60` / `d61_90` / `d90_plus` buckets, plus a `totals` row pooling every
+  outstanding invoice in scope. **Computed on the fly — no stored aggregate
+  table** (the same shape as #30 Claims Analytics; the unscoped `GET /invoices`
+  400 message points here).
+- **"Outstanding" is structural: an `Invoice` with no collection `Receipt`.**
+  #32 records exactly one `Receipt` per invoice for the full total, so a
+  receipt means paid in full — there is no partial-payment state to prorate (a
+  deferred #32 refinement). An `EXCEPTION_RAISED` invoice with no receipt still
+  reads as outstanding (correct — still owed); the #32 crash seam (status
+  `COLLECTED`, no `Receipt`) reads as outstanding until the re-entry heals it.
+- **`asOf` is the ageing reference date** — a bare `YYYY-MM-DD`, today or
+  earlier (a future `asOf` → 422), default today. It is **point-in-time
+  correct for the outstanding *set*** with no history table: the query filters
+  `Invoice.createdAt < asOf+1d` (did it exist yet) and requires
+  `Receipt.receivedAt < asOf+1d` to be `none` (was it still unpaid then) — and
+  `Invoice.dueDate` is write-once at #31, so nothing else needs
+  reconstructing. An invoice paid between `asOf` and now correctly still shows
+  as outstanding-as-at-`asOf`.
+- **Buckets are the textbook 30 / 60 / 90-day bands — drafted / unsourced.**
+  `<= 0` days overdue is `current`, then 1–30 / 31–60 / 61–90 / over 90
+  (`ageingBucketFor`, over `daysOverdue(dueDate, asOf)` on whole UTC calendar
+  days). Same drafted status as `INVOICE_MAX_DUE_DAYS_AHEAD` (#31),
+  `CLAIM_LARGE_THRESHOLD_JOD` (#23), the #27 follow-up thresholds and the #29
+  loss-ratio "period".
+- **Book-wide** — `client-accounting.read` is a Finance / cross-book reporting
+  perm (`[FINANCE_COLLECTIONS_OFFICER, BRANCH_DEPARTMENT_MANAGER,
+  EXECUTIVE_MANAGEMENT, EXTERNAL_AUDITOR]`); no per-owner filter, the optional
+  `customerId` just narrows to one client. Rows ordered **worst-first**
+  (largest days-overdue, then largest outstanding balance, then customer name
+  in a fixed `en` locale). Capped at `AR_AGEING_INVOICE_LIMIT = 5000` (the #30
+  `ANALYTICS_POLICY_LIMIT` precedent — `logger.warn` on truncation).
+- **No maker/checker** (a read). **Not audit-logged** — an invoice total is
+  Confidential, not Highly Confidential: the #31 decision (`GET /invoices` is
+  likewise not audited, same tier as the `Policy` premium read). Contrast the
+  #30 breakdown, which aggregates HIGHLY_CONFIDENTIAL `Claim` rows and so
+  writes a `READ` row.
+- Every figure is pooled through `sumMoney` (`money.util.ts`) — a bucket total
+  or an `outstandingTotal` is a sum of the invoice totals, never a re-derived
+  or averaged figure. No migration, no seed change (`client-accounting.read`
+  pre-existed).
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
   `invoiceFiguresMatch`, `deriveInvoiceView`, the audit snapshots, the drafted
   `INVOICE_MAX_DUE_DAYS_AHEAD` / `NEW_BUSINESS_PREMIUM_INVOICE_TYPE`;
-  `computeRemittanceAmount`, `RECEIPT_METHODS`.
+  `computeRemittanceAmount`, `RECEIPT_METHODS`; `buildReceivablesAgeing`,
+  `daysOverdue`, `ageingBucketFor`, `AR_AGEING_BUCKET_KEYS`,
+  `AR_AGEING_INVOICE_LIMIT` (#33).
+- `apps/api/src/modules/finance/client-accounting.service.ts` +
+  `client-accounting.controller.ts` — the #33 ageing report
+  (`GET /client-accounting/ageing`);
+  `apps/api/src/repositories/invoice.repository.ts` gains
+  `loadOutstandingReceivables`.
+- `apps/web/app/(app)/client-accounting/page.tsx` +
+  `apps/web/lib/client-accounting/ageing-api.ts` — the "Client accounting"
+  screen.
 - `apps/api/src/modules/finance/invoice.service.ts` — the #31 create/get/list
   orchestration.
 - `apps/api/src/modules/finance/collection.service.ts` — the #32 cycle
@@ -184,11 +245,12 @@ Remittance cycle".)*
 
 ## Out of scope for this file
 
-Client & insurer accounting/ageing reads (#33–34), commission agreements & the
-ledger (#35–36), refunds (#37, covered under `policy-lifecycle.md`'s
-endorsement section), payment channels (#38), bank reconciliation exceptions
-(#39 — the `ReconciliationException` model + the investigate/resolve path, and
-the `EXCEPTION_RAISED` / `EXCEPTION_RESOLVED` `Invoice` states), and financial
+Insurer accounting/ageing (#34 — accounts-payable / remittance obligations per
+insurer, from `Remittance`), commission agreements & the ledger (#35–36),
+refunds (#37, covered under `policy-lifecycle.md`'s endorsement section),
+payment channels (#38), bank reconciliation exceptions (#39 — the
+`ReconciliationException` model + the investigate/resolve path, and the
+`EXCEPTION_RAISED` / `EXCEPTION_RESOLVED` `Invoice` states), and financial
 reporting (#40). Add each as its own section here as it is built. The
 commission *rate* mechanics live in Part 3.6 of the context document until #35
 justifies splitting them out.
