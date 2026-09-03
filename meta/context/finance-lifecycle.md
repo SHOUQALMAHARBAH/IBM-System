@@ -11,12 +11,12 @@ Processes 31–40. Source: `IBMS_Full_Scope_Context_Document.docx` Part 3.6.
 Policy placement/issuance/endorsement is `meta/context/policy-lifecycle.md`;
 claims payouts are `meta/context/claims-lifecycle.md`.
 
-**Processes 31 (Premium Billing), 32 (Collection), 33 (Client Accounting),
-34 (Insurer Accounting), 35 (Commission Calculation), 36 (Commission
-Reconciliation), 38 (Payment Processing) and 39 (Bank Reconciliation)** are
-built in `ibms-app` so far (#37 Refund Management is covered under
-`policy-lifecycle.md`'s endorsement section — the endorsement-driven `Refund` +
-maker/checker). Only #40 (Financial Reporting) remains.
+**Domain D is complete.** Processes 31 (Premium Billing), 32 (Collection),
+33 (Client Accounting), 34 (Insurer Accounting), 35 (Commission Calculation),
+36 (Commission Reconciliation), 38 (Payment Processing), 39 (Bank
+Reconciliation) and 40 (Financial Reporting) are built in `ibms-app`; #37
+Refund Management is covered under `policy-lifecycle.md`'s endorsement section
+(the endorsement-driven `Refund` + maker/checker).
 
 ## The shapes
 
@@ -611,6 +611,90 @@ the exact variance amount, never silently written off or rounded away".)*
   Part 7.3 guarantees is broken; until then Finance resumes at `RECONCILED`
   and remits normally.
 
+### Financial Reporting (Process 40)
+
+*(The backlog line for #40 has **no checkboxes** — it reads only "Financial
+Reporting — dashboard D in Part E". "Dashboard D" is Part E's **Financial
+Dashboard**: "receivables and ageing, payables to insurers, commission income
+and outstanding commission, profitability by client segment / line". The
+backend consolidates the pieces that already exist and adds the two that do
+not; the Part E deliverable is the dashboard UI + its filters. All `ibms-app`
+product decisions filed via `/brain-gap` at Part C #40.)*
+
+- **`GET /financial-report/summary?asOf=`** (`financial-report.view` —
+  `[FINANCE_COLLECTIONS_OFFICER, BRANCH_DEPARTMENT_MANAGER,
+  EXECUTIVE_MANAGEMENT, EXTERNAL_AUDITOR]`, the **same perm** `GET
+  /commission/entries` already uses — **no seed change**) returns the
+  consolidated summary: `{ asOf, currency: 'JOD', receivables, payables,
+  commission, profitability }`. **Computed on the fly — no stored aggregate**
+  (the #30 / #33 / #34 shape). Book-wide (the perm is cross-book reporting);
+  **no maker/checker** (a read).
+- **`receivables`** is #33's `buildReceivablesAgeing(...).totals` verbatim —
+  `outstandingTotal` + the five ageing buckets + `invoiceCount` /
+  `customerCount`. **`payables`** is #34's `buildInsurerPayables(...).totals`
+  verbatim — `outstandingAmount` / `remittedAmount` + counts + `insurerCount`.
+  The service calls `ClientAccountingService` / `InsurerAccountingService`
+  directly (so the truncation `logger.warn`s still fire) and passes `asOf`
+  through — a future `asOf` → **422** (`parseHistoricalInstant`), default
+  today. These two sections are **point-in-time at `asOf`**.
+- **`commission`** is the new roll-up over `CommissionLedgerEntry`
+  (`buildCommissionRollup`, pure) — the "AP-style outstanding-vs-paid-vs-reversed
+  roll-up by insurer" #36 deferred here. Per entry: `earned = amount` (the
+  *effective* commission — `amount` holds the governed figure on a fresh /
+  pending-override entry and the override once approved, the
+  `deriveLedgerEntryView` `effectiveAmount` rule), `paid = paidAmount ?? 0`,
+  `reversed = reversedAmount ?? 0`, **`outstanding = max(0, amount − paid −
+  reversed)`** — floored at 0 per entry. The floor matters because a
+  reconciled-then-clawed-back entry is a legal #36 / #22 state: `settle` stamps
+  `paidAmount == amount`, then a Process 22 cancellation stamps `reversedAmount`
+  (0 < x ≤ amount) on the still-`paid` entry (and flips it to `reversed` on a
+  *full* clawback — `paidAmount` is not cleared). Without the floor that entry's
+  `outstanding` would be `−reversedAmount` — a negative "still collectible",
+  which drags the pooled total down and inverts the worst-first sort. **So the
+  strict identity `earned == paid + outstanding + reversed` holds ONLY for
+  entries with no paid+reversed overlap** (the normal case); `netEarned =
+  earned − reversed` is the recognised commission income after clawbacks — use
+  that, not `earned`, as the "income" figure. Also `vat` (Σ `vatAmount`) and
+  `gross = earned + vat` are on the **gross** `earned` (a reversal's VAT
+  treatment is a #36 / tax concern, not netted here — a deferred edge),
+  `entryCount`, and `byInsurer[]` (the same `CommissionRollupFigures` per
+  `policy.insurerId`, worst-first — largest `outstanding`, then `earned`, then
+  name; the book totals pool the exact per-entry values the rows do). Every
+  figure through `money.util.ts`. **Current-state** (the commission ledger is
+  not time-versioned) — `asOf` does not constrain it.
+- **`profitability`** is the new "by client segment / line" section
+  (`buildProfitability`, pure). Every **written** policy (status past
+  `PLACEMENT_CONFIRMED` — the #30 `ANALYTICS_WRITTEN_POLICY_STATUSES` list, a
+  cancelled / expired policy still contributes its full written premium) is
+  grouped by `insuranceLine` (`byLine`) and by `Customer.customerType`
+  (`bySegment` — `CORPORATE` / `INDIVIDUAL`). Per group: `premiumWritten`
+  (Σ `issuedPremium ?? requestedPremium`), `claimsPaid` (Σ net settlement of
+  the group's SETTLED / CLOSED claims), `commissionEarned`
+  (Σ `entry.amount − entry.reversedAmount`, net of clawback), and
+  **`netPosition = premiumWritten − claimsPaid − commissionEarned`** — the
+  backlog line's literal "premium − claims − commission" (a drafted
+  interpretation: for a *broker* the P&L driver is `commissionEarned`, but the
+  backlog wording is the book's underwriting result, so that is what the field
+  returns; it can be negative). Rows worst-first (smallest / most-negative
+  `netPosition`). **Current-state.**
+- **The profitability section aggregates SETTLED / CLOSED `Claim` net
+  settlements (HIGHLY_CONFIDENTIAL)** — so, exactly like #30 Claims Analytics,
+  the service writes a **best-effort `READ` audit row**
+  (`entityType: 'FinancialReport'`, `entityId: 'summary'`, `afterValue` =
+  `asOf` + counts only, never a figure or a name; `isSensitiveDataAccess` when
+  a settled claim contributed). Contrast #33 / #34, which are Confidential-tier
+  and not audited. All four reads run under one `Promise.all`; each section is
+  capped at `FINANCIAL_REPORT_ROW_LIMIT = 5000` (`logger.warn` on truncation).
+- **No migration, no seed change.** `financial-report.view` was seeded in
+  `a440c1b`.
+- **Deferred**: the `asOf` / line / insurer / branch / language **filters**
+  and the dashboard UI are Part E; commission + profitability are current-state
+  only (no point-in-time reconstruction); `netPosition` is a drafted metric
+  (no CBJ / Part-3.6 profitability definition); no CSV / export; no
+  cross-currency handling (JOD only, the `money.util.ts` / #30 / #33 / #34
+  assumption); the aggregation is in-memory (`findMany` + JS grouping), fine at
+  a broker's book size, capped.
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
@@ -706,8 +790,20 @@ the exact variance amount, never silently written off or rounded away".)*
   `[FINANCE]` / `.resolve` `[FINANCE, MANAGER]` pre-existed).
   `apps/web/app/(app)/bank-reconciliation/page.tsx` +
   `apps/web/lib/finance/reconciliation-api.ts` — the "Bank reconciliation" screen.
+- Process 40: `apps/api/src/modules/finance/financial-report.service.ts` +
+  `financial-report.controller.ts` (`@Controller('financial-report')`) +
+  `repositories/financial-report.repository.ts` (`loadCommissionRollupEntries`
+  / `loadProfitabilityPolicies` — book-wide, capped). `finance.config.ts` gains
+  `buildCommissionRollup` / `buildProfitability` (+ their row / section types),
+  `FINANCIAL_REPORT_ROW_LIMIT`, `PROFITABILITY_GROUP_BY`. The service composes
+  #33's `ClientAccountingService` + #34's `InsurerAccountingService` totals
+  with the two builders and writes the best-effort `READ` audit row. **No
+  migration, no seed change** (`financial-report.view` pre-existed).
+  `apps/web/app/(app)/financial-report/page.tsx` +
+  `apps/web/lib/finance/financial-report-api.ts` — the "Financial report"
+  screen.
 
 ## Out of scope for this file
 
-refunds (#37, covered under `policy-lifecycle.md`'s endorsement section) and
-financial reporting (#40). Add each as its own section here as it is built.
+refunds (#37, covered under `policy-lifecycle.md`'s endorsement section). Every
+Domain D process (31–40) now has its own section above.
