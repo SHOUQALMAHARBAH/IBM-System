@@ -12,9 +12,11 @@ Policy placement/issuance/endorsement is `meta/context/policy-lifecycle.md`;
 claims payouts are `meta/context/claims-lifecycle.md`.
 
 **Processes 31 (Premium Billing), 32 (Collection), 33 (Client Accounting),
-34 (Insurer Accounting), 35 (Commission Calculation) and 36 (Commission
-Reconciliation)** are built in `ibms-app` so far — the rest of this file will
-grow as #37–40 land.
+34 (Insurer Accounting), 35 (Commission Calculation), 36 (Commission
+Reconciliation) and 38 (Payment Processing)** are built in `ibms-app` so far
+(#37 Refund Management is covered under `policy-lifecycle.md`'s endorsement
+section — the endorsement-driven `Refund` + maker/checker). The rest of this
+file will grow as #39–40 land.
 
 ## The shapes
 
@@ -39,14 +41,21 @@ every subsequent hop through the engine.
 Receipt        n..1 Invoice   # #32 records exactly one, for the full total
   amount: Decimal(18,3)       # MUST equal Invoice.totalAmount
   method: string?             # bank_transfer | cheque | card | cash
+  paymentChannelId: string?  # #38 — the approved customer PaymentChannel (optional); derives `method`
   receivedAt: DateTime
 Remittance      1..1 Receipt  # receiptId @unique
   insurerId: string           # from Policy.insurerId
   amount: Decimal(18,3)       # ALWAYS premiumAmount − commissionDeducted, computed
+  paymentChannelId: string?  # #38 — the approved insurer PaymentChannel (optional)
   remittedAt: DateTime?
 ClientFundsLedgerEntry  n..1 Customer   # Part 7.3 — one per money movement
   amount / direction ('in' on receipt, 'out' on remittance)
   reference: string           # 'invoice:<id>' pointer, never free text
+PaymentChannel   n..1 Customer | n..1 Insurer   # #38 — approved payment channel
+  ownerType: 'customer' | 'insurer'   # exactly one of customerId/insurerId, CHECK-enforced
+  channelType: string        # bank_transfer | cheque | card | cash
+  label / bankName / accountLast4  # MASKED ONLY — no full account number (Highly Confidential)
+  status: 'active' | 'disabled'
 ```
 
 Endpoints (`ibms-app`): `POST /invoices` (`invoice.create` / Finance);
@@ -57,7 +66,10 @@ Endpoints (`ibms-app`): `POST /invoices` (`invoice.create` / Finance);
 Auditor); `GET /client-accounting/ageing?customerId=|asOf=`
 (`client-accounting.read`) — the #33 AR / ageing report;
 `GET /insurer-accounting/payables?insurerId=|asOf=`
-(`insurer-accounting.read`) — the #34 AP / remittance-obligations report.
+(`insurer-accounting.read`) — the #34 AP / remittance-obligations report;
+`POST /payment-channels` + `POST /payment-channels/:id/disable` +
+`GET /payment-channels?ownerType=|customerId=|insurerId=|status=`
+(`payment-channel.manage` / Finance) — the #38 approved-channel list.
 
 ## The rules that aren't obvious
 
@@ -426,6 +438,75 @@ logged approval".)*
   Reporting (#40). The per-entry lifecycle fields + `GET /commission/entries`
   are the #36 deliverable.
 
+### Payment Processing (Process 38)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #38 — Part
+3.6 says only "record approved payment channels for customers and insurers".)*
+
+- **`PaymentChannel` is a governed reference list, not a workflow entity.**
+  `POST /payment-channels` (`payment-channel.manage` — a **new seed perm**,
+  `[FINANCE_COLLECTIONS_OFFICER]`) records an approved channel for a customer
+  (money **in**, referenced on a `Receipt`) or an insurer (money **out**,
+  referenced on a `Remittance`). `ownerType` ∈ `{customer, insurer}` and
+  exactly one of `customerId` / `insurerId` is set and matches it — validated
+  in the service AND backed by the `PaymentChannel_owner_exactly_one` CHECK
+  (migration `20260903140000`). A channel is `active` (= approved, usable) on
+  creation; `POST /payment-channels/:id/disable` is a status-conditional
+  `updateMany` (`where: { id, status: 'active' }`) — 0 rows → already disabled
+  → idempotent. **No maker/checker** — a reference list that moves no money is
+  single-actor Finance work (`roles-and-segregation-of-duties.md`;
+  `maker-checker-segregation.md` § "What does NOT trigger this rule" — the
+  exemption ends the day the channel becomes mandatory or a "release payment"
+  step executes a transfer). The two owner FKs are **`ON DELETE RESTRICT`**
+  (Prisma's `SET NULL` default would violate the `owner_exactly_one` CHECK on a
+  hard delete of the owner — an M06 disposal must remove the channels first).
+- **Masked-only — NO full bank account / card number anywhere.**
+  `sensitive-data-handling.md` classes bank/card data as Highly Confidential
+  (never stored / logged / displayed unmasked, and "a list view showing a full
+  bank account number instead of a masked value" is a violation). #38 stores
+  `label` + `bankName` + **`accountLast4`** (2–4 digits, `^\d{2,4}$`) and
+  nothing else — the DTO has no full-number field, the model stays
+  `CONFIDENTIAL`, and the audit snapshot carries `ownerType` / `channelType` /
+  `label` / `bankName` / `status` but **never `accountLast4`** (even the
+  fragment stays out of the trail). Full-IBAN / SWIFT storage + encryption is a
+  deferred refinement.
+- **#32's Receipt / Remittance reference a channel — optional but validated.**
+  `Receipt.paymentChannelId` / `Remittance.paymentChannelId` (nullable FKs,
+  same migration). On `POST /invoices/:id/receipt` an optional
+  `paymentChannelId` must be an **`active`** channel with
+  `ownerType = 'customer'`, `customerId = invoice.customerId`, and
+  `currency = invoice.currency` (else a **422** — `404` on an unknown id), and
+  it **derives `Receipt.method`** from `channel.channelType`; a caller-supplied
+  `method` that disagrees is a **422** (the "computed, not an input, when it is
+  derivable" rule — #28 `netSettlement` / #31 `totalAmount`).
+  `POST /invoices/:id/remittance` is the mirror on the insurer side
+  (`ownerType = 'insurer'`, `insurerId = policy.insurerId`). **Ordering** (the
+  #31 / #28 lesson): the channel id is *loaded* (404-only) up front, but the
+  owner / status / currency / method checks run **after** #32's write-once
+  resume — so an idempotent retry after the channel was later disabled still
+  resumes (200), it does not 422. Keeping it optional means #32's existing
+  contract + e2e are unchanged (a hard "must use an approved channel" gate is a
+  later tightening). #32's write-once / idempotency comparisons — the
+  `existingReceipt` same-check, **both** `finishReceipt` **and** `finishRemittance`
+  concurrent same-checks, and both `P2002` resume checks — now compare
+  `paymentChannelId` (with `amount` + `insurerId` on the remittance side), so a
+  re-`POST` with a different channel is a **409** and the remittance `P2002` /
+  concurrent branches are no longer an unconditional "deterministic resume".
+- **`Remittance.remittedAt` is unchanged** — #32 already stamps it at
+  remittance time; #38 does not add a separate "processed" step. `Receipt.method`
+  keeps its `bank_transfer | cheque | card | cash` domain, shared with
+  `PaymentChannel.channelType`.
+- Audit: a best-effort `CREATE PaymentChannel` row on add, an `UPDATE` on
+  disable (`paymentChannelAuditSnapshot`, no `accountLast4`); the #32
+  `CREATE Receipt` / `CREATE Remittance` snapshots gain `paymentChannelId` (a
+  pointer). Book-wide reads (`payment-channel.manage`), no per-owner filter.
+- **Deferred**: no full account number / SWIFT / encryption; no per-owner
+  "default channel"; the receipt/remittance channel is optional, not mandatory;
+  no channel on refunds (#37) or commission settlement (#36); no bank / gateway
+  integration — a `Receipt` / `Remittance` still records that money moved as a
+  fact, not an executed transfer. No approval workflow on the channel itself
+  (`active`/`disabled` only).
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
@@ -493,11 +574,24 @@ logged approval".)*
   the `invoiceType` column + the partial `UNIQUE`. #32 needs no migration.
 - `apps/web/components/policy/FinanceSection.tsx` — the "Billing" block on the
   opportunity detail screen (raise + the three cycle actions).
+- Process 38: `apps/api/src/modules/finance/payment-channel.service.ts` +
+  `payment-channel.controller.ts` + `repositories/payment-channel.repository.ts`
+  — the approved-channel list; `finance.config.ts` gains
+  `derivePaymentChannelView` / `paymentChannelAuditSnapshot` /
+  `PAYMENT_CHANNEL_OWNER_TYPES` / `ACCOUNT_LAST4`; `collection.service.ts` gains
+  `resolveReceiptChannel` / `resolveRemittanceChannel` and threads
+  `paymentChannelId` through `finishReceipt` / `finishRemittance` /
+  `invoice.repository.ts`'s two `$transaction` writes.
+  `packages/db/prisma/migrations/20260903140000_add_payment_channels/` — the
+  `PaymentChannel` table + the `owner_exactly_one` CHECK + the two nullable
+  FK columns. **Seed: +`payment-channel.manage` `[FINANCE_COLLECTIONS_OFFICER]`.**
+  `apps/web/app/(app)/payment-channels/page.tsx` +
+  `apps/web/lib/finance/payment-channel-api.ts` — the "Payment channels" screen.
 
 ## Out of scope for this file
 
 refunds (#37, covered under `policy-lifecycle.md`'s endorsement section),
-payment channels (#38), bank reconciliation exceptions (#39 — the
-`ReconciliationException` model + the investigate/resolve path, and the
-`EXCEPTION_RAISED` / `EXCEPTION_RESOLVED` `Invoice` states), and financial
-reporting (#40). Add each as its own section here as it is built.
+bank reconciliation exceptions (#39 — the `ReconciliationException` model + the
+investigate/resolve path, and the `EXCEPTION_RAISED` / `EXCEPTION_RESOLVED`
+`Invoice` states), and financial reporting (#40). Add each as its own section
+here as it is built.

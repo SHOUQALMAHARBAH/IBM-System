@@ -28,6 +28,7 @@ Covered actions (Part 5.2 and the M-series business rules in `PRIV-SRS-01`):
 - Read-only views
 - Single-actor actions with no financial, legal, or data-deletion consequence (e.g., logging a customer interaction)
 - Emergency break-glass access — but that path requires its own logged justification and post-hoc Compliance review, which is a separate control, not an exemption from this one
+- **Maintaining a reference list** that only *records* data without executing anything — e.g. the `ibms-app` `PaymentChannel` list (Process 38): today a channel is optional metadata a `Receipt` / `Remittance` points at, it moves no money, so `payment-channel.manage` is single-actor Finance. **This exemption ends the moment the reference becomes load-bearing** — if the channel becomes mandatory on a receipt/remittance, or a "release payment" step ever executes a transfer against it, an "approved-payee list" is a classic maker/checker control and this table gains a row (maker: the officer who adds the channel; checker: a distinct Finance approver), plus the `<> creator` guard.
 
 ## How it is enforced
 
