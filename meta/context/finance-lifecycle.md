@@ -13,10 +13,10 @@ claims payouts are `meta/context/claims-lifecycle.md`.
 
 **Processes 31 (Premium Billing), 32 (Collection), 33 (Client Accounting),
 34 (Insurer Accounting), 35 (Commission Calculation), 36 (Commission
-Reconciliation) and 38 (Payment Processing)** are built in `ibms-app` so far
-(#37 Refund Management is covered under `policy-lifecycle.md`'s endorsement
-section — the endorsement-driven `Refund` + maker/checker). The rest of this
-file will grow as #39–40 land.
+Reconciliation), 38 (Payment Processing) and 39 (Bank Reconciliation)** are
+built in `ibms-app` so far (#37 Refund Management is covered under
+`policy-lifecycle.md`'s endorsement section — the endorsement-driven `Refund` +
+maker/checker). Only #40 (Financial Reporting) remains.
 
 ## The shapes
 
@@ -56,6 +56,11 @@ PaymentChannel   n..1 Customer | n..1 Insurer   # #38 — approved payment chann
   channelType: string        # bank_transfer | cheque | card | cash
   label / bankName / accountLast4  # MASKED ONLY — no full account number (Highly Confidential)
   status: 'active' | 'disabled'
+ReconciliationException  n..1 Invoice?   # #39 — one non-resolved per invoice (partial UNIQUE)
+  insurerStatementAmount / brokerRecordAmount / varianceAmount: Decimal(18,3)
+  varianceAmount = insurerStatementAmount − brokerRecordAmount   # EXACT, never rounded away
+  status: 'open' | 'investigating' | 'resolved'   # plain string, RECON_EXCEPTION_TRANSITIONS
+  raisedByUserId / investigatedByUserId / resolvedByUserId / resolutionNote
 ```
 
 Endpoints (`ibms-app`): `POST /invoices` (`invoice.create` / Finance);
@@ -69,7 +74,12 @@ Auditor); `GET /client-accounting/ageing?customerId=|asOf=`
 (`insurer-accounting.read`) — the #34 AP / remittance-obligations report;
 `POST /payment-channels` + `POST /payment-channels/:id/disable` +
 `GET /payment-channels?ownerType=|customerId=|insurerId=|status=`
-(`payment-channel.manage` / Finance) — the #38 approved-channel list.
+(`payment-channel.manage` / Finance) — the #38 approved-channel list;
+`POST /reconciliation-exceptions/detect` + `.../:id/investigate` +
+`GET /reconciliation-exceptions?invoiceId=|status=` + `.../:id`
+(`reconciliation-exception.investigate` / Finance) and `.../:id/resolve`
+(`reconciliation-exception.resolve` / Finance, Manager) — the #39 bank-recon
+variance job + investigate/close path.
 
 ## The rules that aren't obvious
 
@@ -507,6 +517,100 @@ logged approval".)*
   fact, not an executed transfer. No approval workflow on the channel itself
   (`active`/`disabled` only).
 
+### Bank Reconciliation (Process 39)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #39 — Part
+3.6 / `money-decimal-jod.md`: "a mismatch must be raised as an exception with
+the exact variance amount, never silently written off or rounded away".)*
+
+- **`POST /reconciliation-exceptions/detect`
+  (`reconciliation-exception.investigate` / Finance)** runs the variance check
+  over a batch of insurer-statement lines: `{ lines: [{ invoiceId,
+  insurerStatementAmount }, …] }`. There is **no `InsurerStatement` model** —
+  the statement figures are the request input (a "job that takes the statement
+  and compares"). Per line: `brokerRecordAmount = premiumAmount −
+  commissionDeducted` (`computeRemittanceAmount` — the net the insurer expects,
+  == #32's `Remittance.amount`); `varianceAmount = computeVariance(statement,
+  broker) = subtractMoney(statement, broker)`, **exact, can be ±**. Cap
+  `RECON_DETECT_MAX_LINES = 500` (drafted); a duplicate `invoiceId` in the
+  batch → 422; an unknown / non-policy invoice is **flagged per-line**
+  (`invoice_not_found` / `not_a_policy_invoice`), not thrown, so the rest of
+  the batch still processes. Response: `{ lineCount, reconciled,
+  exceptionsRaised, results: [{ invoiceId, outcome, varianceAmount?,
+  exceptionId? }] }`.
+- **A non-zero variance ALWAYS raises a `ReconciliationException`** (`open`,
+  the exact `varianceAmount` stored) — never rounded away. A zero variance
+  reconciles silently (`outcome: 'reconciled'`, no row). **One non-resolved
+  exception per invoice** — the partial `UNIQUE ("invoiceId") WHERE "status" <>
+  'resolved' AND "invoiceId" IS NOT NULL` (migration `20260903150000`, raw
+  SQL). On detect, an existing open exception with the **same** figures →
+  `outcome: 'exception_exists'` (idempotent); **different** figures →
+  `outcome: 'conflicting_exception'` (resolve the old one first); a concurrent
+  create → `P2002` → resolve/conflict.
+- **The exception is the source of truth for the variance; the `Invoice`
+  transition is state-gated + best-effort.** `Invoice` IS a
+  `WorkflowTransitionService` entity — detect drives `COLLECTED | RECONCILED →
+  EXCEPTION_RAISED` through the engine (the only two `→ EXCEPTION_RAISED`
+  sources in `WORKFLOW_TRANSITIONS.Invoice`). For any **other** invoice state
+  (`INVOICED`, `REMITTED`, already `EXCEPTION_*`) the exception is still
+  recorded (that IS the "never written off" guarantee), just with **no** engine
+  transition; a failed transition is a `logger.error`, not a throw.
+- **`ReconciliationException.status` is a plain string** (the
+  `CommissionLedgerEntry.status` pattern — NOT a `WorkflowTransition` entity).
+  `RECON_EXCEPTION_TRANSITIONS` (`open: [investigating, resolved]`,
+  `investigating: [resolved]`, `resolved: []` — an investigation step is
+  optional); every move validates against it + persists via a
+  status-conditional `updateMany`.
+- **`POST /reconciliation-exceptions/:id/investigate`
+  (`reconciliation-exception.investigate`)** — `open → investigating`, stamps
+  `investigatedByUserId` (a claim, so already-`investigating` is an idempotent
+  200 regardless of who; already-`resolved` → 422).
+- **`POST /reconciliation-exceptions/:id/resolve`
+  (`reconciliation-exception.resolve` / Finance, **Manager**)** — `{
+  resolutionNote (mandatory `@MinLength(10)`, logged **verbatim** — the reason
+  IS the "closure path", a business justification like #35's `overrideReason`),
+  resumeInvoiceAs? }`. `{open|investigating} → resolved` (+ `resolvedAt` /
+  `resolvedByUserId`). **NO figure is adjusted** — the `varianceAmount` stays
+  recorded on the exception (the whole point of "never a silent write-off").
+  Then, when the parent `Invoice` is mid-exception (`EXCEPTION_RAISED` or
+  `EXCEPTION_RESOLVED`), the engine drives it `EXCEPTION_RAISED →
+  EXCEPTION_RESOLVED → RECONCILED` (or just the last hop on a crash
+  re-entry that finds it already at `EXCEPTION_RESOLVED`). `resumeInvoiceAs`
+  can only be **`RECONCILED`** — the engine map also allows
+  `EXCEPTION_RESOLVED → REMITTED`, but resuming straight there would land a
+  terminal-state invoice with **no `Remittance` row and no `out`
+  `ClientFundsLedgerEntry`** (both are minted only inside `POST
+  /invoices/:id/remittance`'s `$transaction` — Part 7.3 client-money trace),
+  so `resolve` returns the invoice to `RECONCILED` and Finance completes the
+  cycle with a normal remittance call. `resumeInvoiceAs` is **required** when
+  the invoice is mid-exception (422 if omitted), ignored otherwise; the
+  resume re-reads between the two hops so a concurrent `resolve` that already
+  carried the invoice on is a clean no-op, not a same-state engine error.
+  **Ordering**: the invoice hops run BEFORE `recordResolution` so a
+  crash before the exception write is a clean retry. Idempotent re-`resolve`
+  with the same note → 200; a different note → 409.
+- **No maker/checker.** Reconciling the cycle is single-actor Finance work
+  (`roles-and-segregation-of-duties.md` — the Finance maker/checker pair is
+  refunds / overrides); `investigate` (Finance) and `resolve` (Finance /
+  Manager) being distinct perms is the natural segregation, not a hard control.
+- Audit: `CREATE ReconciliationException` (the three figures as fixed 3dp
+  strings + ids + status, no free text), `UPDATE` on investigate (the
+  investigator) and on resolve (`resolutionNote` verbatim + `resolvedByUserId`
+  + `resumeInvoiceAs`); plus the engine `TRANSITION` rows on the `Invoice`.
+  Book-wide reads. **No seed change** (`reconciliation-exception.investigate`
+  `[FINANCE]` / `.resolve` `[FINANCE, MANAGER]` pre-existed).
+- **Deferred**: no `InsurerStatement` model / statement audit trail; the
+  broker record is always the deterministic `premium − commission`, not the
+  actual `Remittance.amount` (they are equal by #32's construction); no
+  ageing / dashboard of open exceptions; `resolve` cannot itself correct a
+  figure (a genuine broker-record correction is a manual / #40 concern);
+  no automatic detection sweep (there is no statement data source to sweep);
+  **`resumeInvoiceAs` cannot be `REMITTED`** — re-allowing it needs
+  `resumeInvoice` to mint the `Remittance` + `out` `ClientFundsLedgerEntry`
+  the way `POST /invoices/:id/remittance` does, or the client-money trace
+  Part 7.3 guarantees is broken; until then Finance resumes at `RECONCILED`
+  and remits normally.
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
@@ -587,11 +691,23 @@ logged approval".)*
   FK columns. **Seed: +`payment-channel.manage` `[FINANCE_COLLECTIONS_OFFICER]`.**
   `apps/web/app/(app)/payment-channels/page.tsx` +
   `apps/web/lib/finance/payment-channel-api.ts` — the "Payment channels" screen.
+- Process 39: `apps/api/src/modules/finance/reconciliation.service.ts` +
+  `reconciliation.controller.ts` (`@Controller('reconciliation-exceptions')`) +
+  `repositories/reconciliation.repository.ts` — the variance check + the
+  investigate / resolve path; `finance.config.ts` gains `computeVariance`,
+  `RECON_EXCEPTION_TRANSITIONS` / `isReconExceptionTransition`,
+  `deriveReconExceptionView` / `reconExceptionAuditSnapshot` /
+  `reconExceptionUpdateAuditSnapshot`, `RECON_DETECT_MAX_LINES` /
+  `RECON_INVOICE_RESUME_STATUSES`.
+  `packages/db/prisma/migrations/20260903150000_add_bank_reconciliation/` — the
+  `raisedByUserId` / `resolvedByUserId` / `resolutionNote` columns, the two
+  plain indexes, and the partial `UNIQUE ("invoiceId") WHERE "status" <>
+  'resolved'` (raw SQL). **No seed change** (`reconciliation-exception.investigate`
+  `[FINANCE]` / `.resolve` `[FINANCE, MANAGER]` pre-existed).
+  `apps/web/app/(app)/bank-reconciliation/page.tsx` +
+  `apps/web/lib/finance/reconciliation-api.ts` — the "Bank reconciliation" screen.
 
 ## Out of scope for this file
 
-refunds (#37, covered under `policy-lifecycle.md`'s endorsement section),
-bank reconciliation exceptions (#39 — the `ReconciliationException` model + the
-investigate/resolve path, and the `EXCEPTION_RAISED` / `EXCEPTION_RESOLVED`
-`Invoice` states), and financial reporting (#40). Add each as its own section
-here as it is built.
+refunds (#37, covered under `policy-lifecycle.md`'s endorsement section) and
+financial reporting (#40). Add each as its own section here as it is built.
