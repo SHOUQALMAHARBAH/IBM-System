@@ -11,9 +11,9 @@ Processes 31–40. Source: `IBMS_Full_Scope_Context_Document.docx` Part 3.6.
 Policy placement/issuance/endorsement is `meta/context/policy-lifecycle.md`;
 claims payouts are `meta/context/claims-lifecycle.md`.
 
-**Processes 31 (Premium Billing), 32 (Collection), 33 (Client Accounting) and
-34 (Insurer Accounting)** are built in `ibms-app` so far — the rest of this
-file will grow as #35–40 land.
+**Processes 31 (Premium Billing), 32 (Collection), 33 (Client Accounting),
+34 (Insurer Accounting) and 35 (Commission Calculation)** are built in
+`ibms-app` so far — the rest of this file will grow as #36–40 land.
 
 ## The shapes
 
@@ -265,6 +265,80 @@ Remittance cycle".)*
   Every figure pooled through `sumMoney`. No migration, no seed change
   (`insurer-accounting.read` pre-existed).
 
+### Commission Calculation (Process 35)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #35 — Part
+3.6 says only "apply the correct commission rate from the agreement table (by
+insurer + line)" and "a manual override with a mandatory reason + a separately
+logged approval".)*
+
+- **The governed rate table is `CommissionAgreement` — by (insurerId,
+  insuranceLine), time-windowed.** `POST /commission/agreements`
+  (`commission-rate.manage` — `[COMPLIANCE_OFFICER,
+  BRANCH_DEPARTMENT_MANAGER]`, **not Finance**: Finance may *apply* the
+  governed rate but "cannot alter commission rate tables without approval",
+  `roles-and-segregation-of-duties.md`). A rate change **opens a new window and
+  closes the prior open one at the same instant** (`effectiveTo =
+  new.effectiveFrom`), both in ONE `$transaction` (`supersedeAndCreateAgreement`
+  — the `reviseChain` / `createIssuanceArtifacts` `$transaction` exception). The
+  partial `UNIQUE ("insurerId", "insuranceLine") WHERE "effectiveTo" IS NULL`
+  (migration `20260903120000`, raw SQL) is the race backstop —
+  **AT MOST ONE open window per pair**, `P2002` → 409. `effectiveFrom` may be
+  future-dated (a scheduled change) but **not earlier than the window it
+  supersedes** (422). A same-rate same-date re-`POST` returns the open window
+  (idempotent, no churn).
+- **`resolveGovernedRate(agreements, at)` (pure)** — the window whose
+  `[effectiveFrom, effectiveTo)` contains `at` (`effectiveFrom` inclusive,
+  `effectiveTo` exclusive; an open window has no upper bound). Contiguous
+  closed windows + the one-open invariant ⇒ at most one match.
+- **`POST /commission/entries` (`commission.calculate` / Finance)** records the
+  **one** `CommissionLedgerEntry` per policy (`policyId @unique`, migration
+  `20260903120000` — write-once, the #31 Invoice pattern) at the governed rate
+  in force for the policy's `(insurerId, insuranceLine)` **at
+  `inceptionDate ?? createdAt`** (the rate the business was written at, not the
+  rate today). `amount = premium × ratePercent%` via `applyPercentage`; 422 if
+  the policy has no `issuedPremium` or no agreement covers the pair at that
+  date. The rate is bounded `0..COMMISSION_MAX_RATE_PERCENT` (= 100) so
+  `amount ≤ premium`. **No maker/checker** — applying the governed figure is
+  mechanical single-actor Finance work (like #31 raising an invoice); the
+  maker/checker is on the *override*. Write-once: a re-`POST` with a matching
+  governed figure resumes (200), a *different* governed figure (the rate table
+  changed after the entry was recorded) → **409** ("recorded once — a
+  correction is a manual override"); an already-overridden entry always
+  resumes. `#31`'s `commissionDeducted` (the client-facing invoice figure) is
+  **NOT** rewired to this table — it stays on the placed-quotation rate; the
+  `CommissionLedgerEntry` is the broker's governed commission-earned record
+  (reconciling the two is a later concern).
+- **The manual override IS a maker/checker pair** (`CommissionLedgerEntry
+  .overrideRequestedByUserId <> .overrideApprovedByUserId` — the
+  `CommissionLedgerEntry_maker_checker_distinct` CHECK, migration
+  `20260826091424`, + `assertDifferentActors`). `POST /commission/entries/:id/
+  override` (`commission-override.raise` / Finance) — `{ overrideAmount,
+  reason }`, `reason` mandatory (`@MinLength(10)`), `0 ≤ overrideAmount ≤
+  premium`. It writes `overrideAmount` (the migration's new nullable column) +
+  `isManualOverride` + `overrideReason` + `overrideRequestedByUserId`, and
+  **leaves `amount` (the governed figure) untouched** — the override is
+  *pending*. Finance may revise a still-pending override freely; once
+  **approved** it is write-once (byte-identical resume / 409). `POST .../
+  override/approve` (`commission-override.approve` / **Manager**) stamps
+  `overrideApprovedByUserId` and **copies `overrideAmount` into `amount`**
+  (status-conditional `updateMany` — 0 rows → 409; a different approver on an
+  already-approved override → 409; the same one → idempotent; 422 if no
+  override is pending; a null requester → 409, the #28 `'' === actor` fix).
+  `CommissionLedgerEntryView.effectiveAmount` = `overrideApproved ?
+  overrideAmount : amount`; `overridePending` = raised-not-approved.
+- Audit: `CREATE CommissionAgreement` (+ `UPDATE` for the superseded window's
+  `effectiveTo`), `CREATE CommissionLedgerEntry` (ids + the rate applied +
+  amount, no free text), `UPDATE` (override raise) / `APPROVE` (override
+  approve) — both carry `overrideReason` **verbatim** (the reason IS the
+  "separately logged" requirement, and it is a business justification, not
+  personal data — same as #22's `refundAuditSnapshot`). Book-wide reads
+  (`GET /commission/agreements` `commission-rate.manage`;
+  `GET /commission/entries` + `/:id` `financial-report.view`); a
+  `GET /commission/insurers` `{ id, name }` helper for the web add form. **No
+  seed change** (all four commission perms pre-existed); `vatAmount` stays `0`
+  (VAT on commission is #36's "tax implications" line).
+
 ## Where the code lives
 
 - `apps/api/src/modules/finance/finance.config.ts` — `computeInvoiceFigures`,
@@ -290,6 +364,21 @@ Remittance cycle".)*
 - `apps/web/app/(app)/insurer-accounting/page.tsx` +
   `apps/web/lib/insurer-accounting/payables-api.ts` — the "Insurer accounting"
   screen.
+- `apps/api/src/modules/commission/` — Process 35: `commission.config.ts`
+  (`resolveGovernedRate`, `computeCommissionAmount`, the views, the audit
+  snapshots, `COMMISSION_MAX_RATE_PERCENT`), `commission-agreement.service.ts`
+  (the rate table), `commission-ledger.service.ts` (`calculate` + the
+  override maker/checker), `commission.controller.ts`;
+  `apps/api/src/repositories/commission.repository.ts`
+  (`supersedeAndCreateAgreement` `$transaction`, `findAgreementsForPair`,
+  `recordOverrideRaise` / `recordOverrideApproval`).
+  `packages/db/prisma/migrations/20260903120000_add_commission_calculation/` —
+  the partial `UNIQUE` on the open agreement, `CommissionLedgerEntry.policyId
+  @unique`, the `overrideAmount` column.
+- `apps/web/app/(app)/commission/page.tsx` +
+  `apps/web/lib/commission/commission-api.ts` — the "Commission rates" screen;
+  `apps/web/components/policy/CommissionSection.tsx` — the per-policy
+  calculate / override / approve block on the opportunity detail screen.
 - `apps/api/src/modules/finance/invoice.service.ts` — the #31 create/get/list
   orchestration.
 - `apps/api/src/modules/finance/collection.service.ts` — the #32 cycle
@@ -304,13 +393,11 @@ Remittance cycle".)*
 
 ## Out of scope for this file
 
-Commission agreements & the ledger (#35–36 — `CommissionAgreement` by insurer +
-line, `CommissionLedgerEntry` rate/amount/tax/paid/outstanding/reversed, the
-manual-override maker/checker),
+Commission Reconciliation (#36 — `CommissionLedgerEntry` VAT / tax on
+commission, `paid` / `outstanding` / `reversed` lifecycle tracking; #35 only
+ever creates at `outstanding` with `vatAmount = 0`),
 refunds (#37, covered under `policy-lifecycle.md`'s endorsement section),
 payment channels (#38), bank reconciliation exceptions (#39 — the
 `ReconciliationException` model + the investigate/resolve path, and the
 `EXCEPTION_RAISED` / `EXCEPTION_RESOLVED` `Invoice` states), and financial
-reporting (#40). Add each as its own section here as it is built. The
-commission *rate* mechanics live in Part 3.6 of the context document until #35
-justifies splitting them out.
+reporting (#40). Add each as its own section here as it is built.

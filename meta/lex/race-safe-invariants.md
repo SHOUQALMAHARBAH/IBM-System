@@ -17,6 +17,17 @@ descriptive pre-check that returns a friendly 409 before the constraint
 fires is allowed, but only *in addition to* the constraint that actually
 holds the line, never instead of it.
 
+**A status-conditional `updateMany` must re-assert in its `where` *every*
+field the caller validated against between the read and the write — not only
+the status.** If the service loaded a row, checked `assertDifferentActors`
+against its `requestedByUserId`, and is about to copy its `amount` into
+another column, then `requestedByUserId` and `amount` belong in the `where`
+next to `status`. A concurrent write that changed one of them must land zero
+rows → `ConflictException`, not (a) proceed on a stale value it already read,
+or (b) fall through to a DB `CHECK` / `UNIQUE` violation surfaced as a 500.
+The zero-row → 409 path is the single clean outcome for *any* interleaving,
+which is only true if the `where` pins everything the decision depended on.
+
 ## What triggers this rule
 
 - Introducing or depending on a "one live row per parent" / "one active X" /
@@ -35,6 +46,12 @@ holds the line, never instead of it.
   then writing each — the write must re-assert the condition (`updateMany`
   with the not-yet-processed predicate in the `where`), not trust the
   earlier read.
+- An approval / second-approve / override-approve write that reads a row,
+  runs guards against several of its columns (`assertDifferentActors` on a
+  maker id, an amount bound, a status check), then persists a decision — the
+  status-conditional `updateMany` must carry **all** of those columns in its
+  `where`, not just `status`, so a concurrent edit to any of them is a clean
+  409 rather than a stale write or a `CHECK`-constraint 500.
 
 ## What does NOT trigger this rule
 
@@ -74,3 +91,15 @@ in the codebase (`WorkflowTransitionService`'s
 `updateMany({ where: { id, status } })` + zero-row → conflict; the
 maker/checker `CHECK` constraints; the `AuditLogEntry` immutability trigger)
 — it just wasn't a rule, so each new module re-derived it or missed it.
+
+The "re-assert *every* validated field, not just status" clause was added
+after `ibms-app` Part C #35 (Commission Calculation): `recordOverrideApproval`
+gated its `updateMany` on `status` / `isManualOverride` /
+`overrideApprovedByUserId IS NULL` but not on the `overrideRequestedByUserId`
+that `assertDifferentActors` had just checked, nor the `overrideAmount` it was
+about to copy into `amount`. A concurrent `raiseOverride` between the load and
+the write could either surface the DB `CHECK` as a 500 (if the racing raiser
+was the approver) or copy a now-stale amount into `amount` while
+`overrideAmount` held a newer value. `@code-reviewer` flagged it MINOR;
+adding the two columns to the `where` turned both interleavings into the
+existing zero-row → 409 path.
