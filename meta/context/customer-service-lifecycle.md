@@ -13,8 +13,9 @@ feedback (#45) and retention (#46). Source:
 (`apps/api/src/modules/sla/`); consent is a PCMS concern —
 `meta/context/pcms-privacy-modules.md` (M03).
 
-**#41 (Customer Requests), #42 (Complaints Management) and #43 (SLA Management)
-are built.** #44–46 are not started — see root `README.md` § Scope status.
+**#41 (Customer Requests), #42 (Complaints Management), #43 (SLA Management) and
+#44 (Customer Communication) are built.** #45–46 are not started — see root
+`README.md` § Scope status.
 
 ## The shapes
 
@@ -373,3 +374,108 @@ every module", no checkboxes. Like #40 Financial Reporting, #43 is the
   nightly `SlaTimerScheduler` sweep already escalates — it does not add a
   second alerting path); no de-duplication of a multi-stage workflow's rows to
   one logical item (`entityCount` is the current mitigation).
+
+## Customer Communication (Process 44)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #44 — the
+backlog line is one checkbox: "Respect the customer's recorded channel and
+language, and check consent status (`ConsentRecord`) before any marketing
+send". Part 3.8 adds nothing else.)*
+
+- **The model pre-existed and is shared with Process 12.** `CommunicationLog`
+  already carried the Process-44 columns (`channel`, `templateId`,
+  `languageUsed`, `direction @default(OUTBOUND)`, `subject`, `body`,
+  `respectedConsent @default(true)`, `sentAt`, `loggedByUserId`) alongside the
+  Part C #12 RFQ-correspondence columns (`rfqId`, `rfqInsurerId`). The
+  `communication.send` perm
+  (`[SALES_RELATIONSHIP_OFFICER, PLACEMENT_TECHNICAL_OFFICER, CLAIMS_OFFICER,
+  FINANCE_COLLECTIONS_OFFICER]`) was seeded in `a440c1b`. **DISCRIMINATOR:
+  `rfqId IS NULL` == a Process-44 customer-communication row; `rfqId IS NOT
+  NULL` == a #12 RFQ-correspondence row.** Every Process-44 read filters
+  `rfqId: null`, so a #12 row never surfaces through `/communications` (and a
+  #12 id 404s on `GET /communications/:id`).
+- **Migration `20260904120000` (43rd) only WIDENS** — no new table, **no seed
+  change** (149 perms). `Customer.preferredContactChannel InteractionChannel?`
+  (nullable — the recorded channel preference, the parallel to the existing
+  `Customer.languagePreference`, which is where "recorded language" already
+  lives; also added to `CreateCustomerDto`, `CustomerService.toMasked` / `list`
+  and `CustomerRepository`). `CommunicationLog.isMarketing Boolean
+  @default(false)` and `CommunicationLog.consentRecordId String?` (nullable FK →
+  `ConsentRecord`, `ON DELETE SET NULL`). `@@index([customerId])` → composite
+  `@@index([customerId, sentAt])` (the "this customer's comms, newest first"
+  read), plus `@@index([consentRecordId])`.
+- **`CommunicationLog` is NOT a `WorkflowTransitionService` entity and has NO
+  maker/checker** — a factual send log, create + read only, the `Interaction`
+  #10 / RFQ-correspondence #12 shape. No `SlaTimer` (Process 44 has no SLA; the
+  `consent_withdrawal` M03 timer is a separate concern — reflecting a
+  withdrawal in the register — that #44 only *reads*).
+- **New module code lives in `apps/api/src/modules/customer-service/`**
+  (`communication.config.ts` pure core, `.service.ts`, `.controller.ts`,
+  `dto/create-communication.dto.ts`, `dto/list-communications-query.dto.ts`) +
+  `repositories/communication.repository.ts`, wired into
+  `CustomerServiceModule` (the third controller alongside #41 / #42).
+- **Endpoints** (all `communication.send`):
+  - **`POST /communications`** — `{ customerId, body (mandatory), channel?,
+    languageUsed?, isMarketing?, templateId?, subject?, sentAt? }`. Creates a
+    row at `direction: OUTBOUND`, `respectedConsent: true`. 404 unknown
+    customer.
+  - **`GET /communications?customerId=&channel=&isMarketing=&direction=`** —
+    the book-wide Process-44 list (`rfqId IS NULL`), newest-first (`sentAt`
+    then `createdAt`), capped `COMMUNICATION_READ_LIMIT = 5000` (`logger.warn`
+    on truncation).
+  - **`GET /communications/consent-status?customerId=`** — a pre-compose
+    check: `{ customerId, marketing: { allowed, reason, consentRecordId } }`.
+    Declared **before** `:id` in the controller so the literal path wins. 400
+    if `customerId` is omitted, 404 unknown.
+  - **`GET /communications/:id`** — one Process-44 row; a #12 / unknown id →
+    404.
+- **"Respect the customer's recorded channel and language"** — both are
+  **derived, not an input**, the #28 / #31 / #38 "computed when derivable"
+  rule (`resolveChannel` / `resolveLanguage`, pure). Omit → taken from the
+  customer record. Supply a value that **disagrees** with the recorded one →
+  **422**. `languageUsed` always resolves (`Customer.languagePreference` has a
+  value); `channel` becomes a **required input** (422 if also omitted) when
+  the customer has no `preferredContactChannel` on record. There is
+  deliberately no per-message language override.
+- **The marketing-consent gate** (`evaluateMarketingConsent`, pure) — only
+  when `isMarketing: true`. The repository loads the customer's `ConsentRecord`
+  rows where `purpose = 'MARKETING' OR isMarketing = true` (`PRIV-SOP-04` keeps
+  the two as separate controls; either identifies a marketing-consent row);
+  the pure fn picks the **most recent** by `grantedAt ?? createdAt` (then
+  `createdAt`) — consent is point-in-time, a fresh grant after a withdrawal is
+  a valid re-opt-in. `granted && withdrawnAt == null` ⇒ **allowed** (the row's
+  id is stamped onto `CommunicationLog.consentRecordId`). Otherwise the send is
+  **BLOCKED with a 422** (`reason` ∈ `no_record` / `not_granted` /
+  `withdrawn`), **no `CommunicationLog` row is written** (PDPL: no marketing
+  without consent — a blocked send did not happen), and a **best-effort
+  `REJECT` audit row** records the attempt (`entityType: 'CommunicationLog'`,
+  `entityId: 'blocked'`, `afterValue` = `customerId` + `channel` +
+  `blocked: 'marketing_consent_<reason>'` + `consentRecordId` — **no subject /
+  body**). A non-marketing (service / transactional) send never touches the
+  consent table — `respectedConsent` stays `true` (contractual necessity, no
+  consent needed) and `consentRecordId` is null.
+- **`subject` / `body` carry the shared `NO_FULL_ACCOUNT_NUMBER` guard**
+  (`common/dto.util.ts`, same as #41 / #42) and are **Confidential-tier free
+  text** — returned unmasked but **never in an audit row**. The best-effort
+  `CREATE` audit `afterValue` is structural metadata only (`channel`,
+  `templateId`, `languageUsed`, `direction`, `isMarketing`, `respectedConsent`,
+  `consentRecordId`, `sentAt`) — the #12 `RfqCommunication` / CRM `Interaction`
+  precedent (channel + when, not the body). Reads are **not** audited
+  (Confidential tier — the #33 / #34 / #41 precedent; contrast the #30 / #40 /
+  #43 aggregate reads).
+- **`sentAt` is backdatable** via `parseHistoricalInstant` (the #10 / #12
+  helper — an offset-less datetime or a future instant → 422); default now().
+- **No maker/checker** — logging a send is single-actor cross-functional work
+  (`communication.send` is granted to four roles for exactly that reason, the
+  #10 `interaction.log` shape).
+- **Deferred**: no real delivery integration — this is a *log*, not a sender
+  (no email/SMS gateway, no bounce/read tracking); `isMarketing` is a
+  caller-asserted boolean, not derived from `templateId`; one consent check
+  covers all marketing (no per-campaign / per-purpose granularity beyond
+  MARKETING); `INBOUND` Process-44 rows can be created directly in the DB but
+  the `POST` endpoint only writes `OUTBOUND`; no `CommunicationLog` → CRM 360°
+  timeline wiring (#10 `buildCustomerTimeline` still merges only
+  interactions / policies / claims / complaints); no template library / render
+  step (`templateId` is a free string); no bulk / campaign send; no
+  `Customer` update endpoint, so `preferredContactChannel` is set only at
+  customer creation.
