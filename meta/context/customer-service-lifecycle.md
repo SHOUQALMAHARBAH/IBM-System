@@ -1,6 +1,6 @@
 # Customer service lifecycle
 
-**Last verified:** 2026-09-03 · **Owner:** shouq
+**Last verified:** 2026-09-04 · **Owner:** shouq
 
 ## What this is
 
@@ -13,8 +13,8 @@ feedback (#45) and retention (#46). Source:
 (`apps/api/src/modules/sla/`); consent is a PCMS concern —
 `meta/context/pcms-privacy-modules.md` (M03).
 
-**#41 (Customer Requests) and #42 (Complaints Management) are built.** #43–46
-are not started — see root `README.md` § Scope status.
+**#41 (Customer Requests), #42 (Complaints Management) and #43 (SLA Management)
+are built.** #44–46 are not started — see root `README.md` § Scope status.
 
 ## The shapes
 
@@ -269,3 +269,107 @@ Resolution Committee when unresolved internally.)*
   escalates the SLA timer to the internal manager only — the committee route
   is a manual `complaint.escalate`); no link from a complaint to a generated
   acknowledgement / final-response `Document`.
+
+## SLA Management (Process 43)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #43 — the
+backlog line is one sentence: "a monitoring dashboard over `SlaTimer` across
+every module", no checkboxes. Like #40 Financial Reporting, #43 is the
+**backend** for a Part E-style dashboard.)*
+
+- **A read-only view — it creates and resolves nothing.** New module
+  `apps/api/src/modules/sla-dashboard/`, kept **separate from `SlaModule`**
+  (which owns the generic `SlaTimerService` engine + the 15-minute
+  `SlaTimerScheduler` escalation sweep — backlog A.8). `sla-dashboard` only
+  reads `SlaTimer` rows and aggregates them, the way `loss-ratio` is a
+  separate module from the workflow it reports on. **No migration, no seed
+  change** — `sla-dashboard.view`
+  (`[COMPLIANCE_OFFICER, BRANCH_DEPARTMENT_MANAGER, EXECUTIVE_MANAGEMENT,
+  EXTERNAL_AUDITOR]`) was seeded in `a440c1b`. **No maker/checker.**
+- **Built ahead of its data source.** Only 3 registry workflows create timers
+  today (`quarterly_access_review`, `service_request_fulfilment` #41,
+  `complaint_resolution` #42); the dashboard is written to show **every**
+  `SLA_REGISTRY` workflow as `startTimer` call sites land (the #8 / #10
+  shape).
+- **Endpoints** (both `sla-dashboard.view`, book-wide, computed at request
+  `now`, capped `SLA_DASHBOARD_TIMER_LIMIT = 5000` with a `logger.warn` on
+  truncation — the #30 / #33 / #40 in-memory-aggregation pattern):
+  - **`GET /sla-dashboard/summary`** → `{ generatedAt, dueSoonWindow, totals,
+    byWorkflow[], byEntityType[], byEscalationTarget[] }`.
+  - **`GET /sla-dashboard/timers?state=&entityType=&workflowName=`** → the
+    per-timer drill-down list, worst-first (state severity, then oldest
+    `dueAt`, then `id`). `workflowName` is matched as a **prefix** (a base name
+    catches its `::stage` rows). Default when `state` is omitted: the `open`
+    group.
+- **Six mutually-exclusive leaf states**, evaluated per timer at `now`
+  (`classifyTimer`, `sla-dashboard.config.ts`), precedence in this order:
+  `resolved_on_time` (`resolvedAt <= dueAt`) · `resolved_late`
+  (`resolvedAt > dueAt`, even by 1 ms) · `escalated` (`resolvedAt == null &&
+  escalatedAt != null` — always implies past due, the sweep only escalates
+  overdue rows) · `breached` (`resolvedAt == null && escalatedAt == null &&
+  dueAt <= now`) · `due_soon` (`… && dueAt <= now + SLA_DASHBOARD_DUE_SOON_WINDOW`)
+  · `on_track` (everything else). Named **groups** the `?state=` filter also
+  accepts: `open` = the four unresolved states · `open_breached` =
+  breached + escalated · `at_risk` = due_soon + breached + escalated ·
+  `resolved` = both resolved states.
+- **`SLA_DASHBOARD_DUE_SOON_WINDOW = { value: 3, unit: 'calendarDays' }` is a
+  dashboard lookahead heuristic, NOT an SLA registry value.** It only decides
+  which bucket a still-open timer is *shown* in — it never changes a deadline,
+  an escalation, or a `SlaTimer` row — so it is **outside** `pdpl-sla-timers.md`'s
+  rule that any registry value must be sourced from a PRIV-SOP / PRIV-STD. It
+  is drafted; tune it freely. Same drafted status as #41's 5-business-day
+  figure and the #40 `netPosition` metric.
+- **Counts are per timer *row*.** A workflow with N escalation stages (only the
+  two DSR types, and neither is wired yet) produces N `SlaTimer` rows per
+  entity, distinguished by a `::stage` suffix on `workflowName`
+  (`SlaTimerService.stageWorkflowName`). `buildSlaDashboardSummary` groups
+  `byWorkflow` on the **base** name (`baseWorkflowName()` strips the suffix) so
+  all DSR-access stages roll into one `dsr_access_deletion` row, and each group
+  carries `entityCount` (distinct `entityId`) alongside `total` so the reader
+  sees "8 rows across 5 DSRs". `oldestOverdueDays` per group = the max
+  `now − dueAt` across its breached + escalated rows.
+- **`breachRate`** (`totals`, a fixed-4dp string) =
+  `(resolvedLate + breached + escalated) / (resolvedLate + breached +
+  escalated + resolvedOnTime)` — i.e. over timers that have **reached a
+  timeliness verdict**; a still-comfortably-open `on_track` / `due_soon` timer
+  does not dilute it. `"0.0000"` when the denominator is 0.
+- **Registry lookups are non-throwing here.** A persisted `SlaTimer.workflowName`
+  could name a workflow since renamed or removed from `SLA_REGISTRY`, so #43
+  added **`findSlaRegistryEntry(name): SlaRegistryEntry | undefined`**
+  (`sla-registry.config.ts`) — the throwing `getSlaRegistryEntry` is for call
+  sites that control the name. On a miss the dashboard falls back to
+  `{ label: rawName, entityType: timer.entityType, drafted: false,
+  configuredDuration: null }`. `drafted` = the registry `citation` starts
+  `"DRAFT"` (the #41 / #42 / KYC rows).
+- **Best-effort `READ` audit row per read** (`entityType: 'SlaDashboard'`,
+  `entityId: 'summary' | 'timers'`, `afterValue` = counts + `generatedAt` +
+  the filter set only — **never an `entityId`, an entity reference, or a
+  name**). `isSensitiveDataAccess` is set when the loaded timer set contains a
+  row whose `entityType` is in `SLA_DASHBOARD_SENSITIVE_ENTITY_TYPES`
+  (`DataSubjectRequest`, `IncidentReport`, `Complaint`, `KYCRecord`, `Claim`,
+  `LegalHold`) — the existence of a DSR / incident / complaint timer is itself
+  Confidential context (`sensitive-data-handling.md`). This mirrors #30 Claims
+  Analytics / #40 Financial Reporting; contrast #33 / #34 (Confidential-tier
+  AR/AP reads, not audited). A failed audit write is logged and swallowed — it
+  never breaks the read.
+- All aggregation is **pure and unit-tested** in `sla-dashboard.config.ts`
+  (`classifyTimer`, `baseWorkflowName`, `buildSlaTimerRows`,
+  `buildSlaDashboardSummary`, `deriveSlaTimerRow`, `hasSensitiveEntityType`) —
+  the `finance.config.ts` split. The service (`sla-dashboard.service.ts`) only
+  loads rows (`repositories/sla-dashboard.repository.ts`) and writes the audit;
+  the repo read is `orderBy: { dueAt: 'asc' }` so a truncated load keeps the
+  most urgent rows.
+- `apps/web/` gains an **"SLA dashboard"** screen
+  (`app/(app)/sla-dashboard/page.tsx` + `lib/sla/sla-dashboard-api.ts` + an
+  `AppNav` entry) — summary stat cards + a breach-rate %, a `byWorkflow` table
+  (label · entity type · configured SLA · per-state counts · oldest-overdue · a
+  "drafted" marker), a `byEntityType` table, and a `state`-`<select>` + a
+  timers table from `/timers`.
+- **Deferred**: no historical SLA-performance trend — the dashboard is a live
+  "right now" view, no `asOf`, no over-time series; the `dueSoonWindow` is a
+  drafted heuristic; in-memory aggregation capped at 5000 rows (push into the
+  query when the timer table outgrows it); no per-workflow drill-through page;
+  no CSV / export; no notifications (the dashboard reads the same rows the
+  nightly `SlaTimerScheduler` sweep already escalates — it does not add a
+  second alerting path); no de-duplication of a multi-stage workflow's rows to
+  one logical item (`entityCount` is the current mitigation).
