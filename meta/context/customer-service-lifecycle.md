@@ -13,9 +13,9 @@ feedback (#45) and retention (#46). Source:
 (`apps/api/src/modules/sla/`); consent is a PCMS concern —
 `meta/context/pcms-privacy-modules.md` (M03).
 
-**#41 (Customer Requests), #42 (Complaints Management), #43 (SLA Management) and
-#44 (Customer Communication) are built.** #45–46 are not started — see root
-`README.md` § Scope status.
+**#41 (Customer Requests), #42 (Complaints Management), #43 (SLA Management),
+#44 (Customer Communication) and #45 (Customer Feedback) are built.** #46 is not
+started — see root `README.md` § Scope status.
 
 ## The shapes
 
@@ -501,3 +501,81 @@ send". Part 3.8 adds nothing else.)*
   campaign send; no `Customer` update endpoint, so `preferredContactChannel`
   is set only at customer creation (and a non-outbound value there just means
   every send to that customer must name a channel).
+
+## Customer Feedback (Process 45)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #45 — the
+backlog line is a title only, no checkboxes: "Customer Feedback —
+`CustomerFeedback`". Part 3.8 names the model's own doc comment: "satisfaction
+feedback post-issuance, post-claim, post-renewal".)*
+
+- **The model pre-existed and needed NO widening.** `CustomerFeedback` (Part 4
+  core schema) already had every field a satisfaction-survey log needs:
+  `customerId`, `context` (a plain string), `score` (`Int?`), `comments`
+  (`String?`), `submittedAt`. **No migration.** `feedback.log`
+  (`[SALES_RELATIONSHIP_OFFICER]`) was seeded in `a440c1b` — **no seed change**
+  (149 perms). There is **no separate read permission** — `feedback.log` covers
+  create *and* read, the #41 / #44 shape (contrast CRM's `interaction.log` /
+  `customer.360-view.read` split, which exists because `interaction.log` is
+  granted to six cross-functional roles).
+- **Not a `WorkflowTransitionService` entity, no maker/checker, no `SlaTimer`**
+  — a factual log, create + read only. The closest precedent is `Interaction`
+  (#10), not #41 / #42 / #44: feedback has no status, no derived fields, no
+  cross-entity validation at all beyond the customer existing.
+- New module code lives in `apps/api/src/modules/customer-service/`
+  (`feedback.{config,service,controller}.ts` + `dto/create-feedback.dto.ts` +
+  `dto/list-feedback-query.dto.ts`) + `repositories/feedback.repository.ts`,
+  wired as the **4th `CustomerServiceModule` controller**.
+- **`context`** is restricted to the three values the model's own doc comment
+  names — `post_issuance` / `post_claim` / `post_renewal`
+  (`FEEDBACK_CONTEXTS`, `isFeedbackContext`) — a fourth touchpoint is a
+  `/brain-gap`, not a silent DTO relaxation.
+- **`score`** is optional, bounded `1`–`5` (`FEEDBACK_SCORE_MIN` /
+  `FEEDBACK_SCORE_MAX`). **DRAFTED / UNSOURCED** — Part 3.8 names no scale; a
+  5-point CSAT is the common convention, same drafted status as
+  `CLAIM_LARGE_THRESHOLD_JOD` (#23) and the #41 / #42 SLA figures. Replace with
+  a sourced figure if a CX / Compliance SOP supplies one.
+- **Endpoints** (all `feedback.log`): `POST /feedback` — `{ customerId,
+  context, score?, comments?, submittedAt? }`; 404 unknown customer.
+  `GET /feedback?customerId=&context=` — the book-wide list, newest first by
+  `submittedAt`, capped `FEEDBACK_READ_LIMIT = 5000`. `GET /feedback/:id`.
+  `submittedAt` is backdatable via `parseHistoricalInstant` (the #10 / #12 /
+  #44 helper — an offset-less datetime or a future instant → 422; default
+  now()), for logging a response captured after the fact (verbally on a call,
+  on a paper form).
+- **`comments` carries NO `NO_FULL_ACCOUNT_NUMBER` guard**, unlike #41 / #42 /
+  #44's free-text fields — a deliberate divergence, not an oversight. That
+  guard exists for a field sitting *next to a masked-data path* (a "change my
+  bank account" service request, a premium-dispute complaint) where a customer
+  could plausibly paste a full account/card number expecting it to be acted
+  on. Feedback `comments` is a satisfaction survey's open-text box — the CRM
+  `Interaction.summary` shape (`log-interaction.dto.ts` carries no such guard
+  either), not the #41/#42/#44 shape. If a future Domain E item finds this
+  wrong, extend the guard here too — the constant is centralized in
+  `common/dto.util.ts` either way.
+- **`comments` is deliberately excluded from the `CREATE` audit `afterValue`**
+  — `afterValue` = ids + `context` + `score` + `submittedAt` only. This follows
+  the CRM `Interaction.summary` precedent (`crm.service.ts` `logInteraction`
+  logs channel/`occurredAt`, never `summary`), not #41 (`detail`) / #42
+  (`issue`/`resolution`), which DO log their free text verbatim. The reasoning:
+  feedback `comments` is the customer's own subjective reflection — closer in
+  kind to a private relationship-log note than to an operational "what was
+  done / why" business-action record, so the more conservative precedent wins.
+- **No ownership-based read gating.** `feedback.log` is single-role
+  (`SALES_RELATIONSHIP_OFFICER`) and is the sole gate on both write and read —
+  book-wide, not filtered by `Customer.ownerUserId` (the #41 / #42 / #44
+  shape; CRM's ownership check exists only because `customer.360-view.read` is
+  a *separate*, broader-granted read permission).
+- Audit: best-effort `CREATE CustomerFeedback` only (ids + `context` + `score`
+  + `submittedAt`, never `comments`). Reads are not audited (Confidential
+  tier — the #33 / #34 / #41 / #44 precedent).
+- **Deferred**: no link from a feedback row to the specific triggering
+  `Policy` / `Claim` / `RenewalCase` — `context` is a label, not a foreign key,
+  so "which claim was this post-claim survey about" is not queryable (adding
+  that would be a migration + per-context FK validation, out of scope for a
+  no-checkbox backlog line); the 1–5 score scale is drafted; no automatic
+  survey trigger (a #23-style "on claim closure, prompt for feedback" flow is
+  not built — logging is always a manual `POST`); no duplicate-response
+  detection (a customer can submit feedback for the same context repeatedly);
+  no aggregation / CSAT-dashboard reporting (the #40 / #43 "backend for a Part
+  E dashboard" shape is not repeated here — reads are a plain filtered list).
