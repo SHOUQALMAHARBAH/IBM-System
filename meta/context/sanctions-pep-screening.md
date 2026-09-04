@@ -32,8 +32,11 @@ WatchlistEntry
   fullName: string
   normalizedName: string        # normalizeWatchlistName(fullName) — see below
   listProgram: string?          # OFAC "Program", or UN "UN_LIST_TYPE (REFERENCE_NUMBER)"
-  remarks: string?              # OFAC "Remarks", or UN "COMMENTS1" — PUBLIC government
-                                 # text, not IBMS customer data
+  remarks: string?              # OFAC "Remarks", or UN "COMMENTS1" — classified
+                                 # HIGHLY_CONFIDENTIAL by default (see BLOCKER 4 below);
+                                 # can carry a real individual's DOB + alleged conduct
+  classification: DataClassification  # @default(HIGHLY_CONFIDENTIAL) — a review
+                                       # BLOCKER; see below
   syncRunId: string              # which WatchlistSyncRun last confirmed this row
 
 WatchlistSyncRun
@@ -41,6 +44,8 @@ WatchlistSyncRun
   status: "running" | "succeeded" | "failed"
   recordCount: int?
   errorMessage: string?
+  # a hand-authored partial UNIQUE(source) WHERE status='running' — a review BLOCKER;
+  # see below
 ```
 
 `ScreeningBatchScheduler` (unchanged file, `apps/api/src/modules/customer/`) now runs
@@ -120,6 +125,86 @@ so `POST /screening/recurring-batch` can call the identical logic on demand).
   is an observed publication cadence, not a guess, the same status
   `kyc-aml-sla-timers.md`'s two figures have.
 
+## `@code-reviewer` findings (resolved) — read this before touching the sync job again
+
+The first pass shipped without any of the four things below. All four are now fixed;
+this section exists because each one is a mistake an agent re-implementing "a scheduled
+external sync + cache refresh" elsewhere in this codebase is likely to repeat.
+
+- **BLOCKER 1 — no concurrency guard.** Nothing stopped a manual `POST
+  /watchlist-sync/run` from firing while the 12-hourly scheduler was already mid-run for
+  the same source (or two manual triggers overlapping). Two concurrent syncs of the same
+  source interleave their `pruneStale` calls — one run's prune can delete rows the
+  *other* run just (re-)wrote under a different `syncRunId`, silently dropping a
+  currently-sanctioned entry from the cache until the next sync happens to re-add it.
+  **Fixed**: a hand-authored partial `UNIQUE (source) WHERE status='running'` on
+  `WatchlistSyncRun` (`race-safe-invariants.md`'s shape — Prisma cannot express the
+  `WHERE` predicate in `@@unique`, so this lives only in the migration SQL, not the
+  schema's `@@unique` block). `createSyncRun`'s resulting P2002 is caught in
+  `WatchlistSyncService.syncSource` and mapped to a `'skipped'` outcome, not an
+  unhandled rejection.
+- **BLOCKER 2 — no plausibility check before pruning.** A 200 response carrying the
+  wrong content (a WAF/interstitial page, a captcha, a changed redirect target) parses
+  to zero or near-zero records without ever throwing an error — nothing distinguished
+  that from OFAC/UN genuinely, drastically shrinking their list (which doesn't happen in
+  practice), so `pruneStale` would happily wipe out the *entire* prior cache for that
+  source on the strength of a bad fetch. **Fixed**: before committing anything,
+  `WatchlistSyncService` compares the freshly parsed count against
+  `WatchlistEntryRepository.findLastSuccessfulRun`'s `recordCount` — the new count must
+  be at least `WATCHLIST_MIN_ACCEPTABLE_RATIO = 0.5` (drafted) of it, or at least
+  `WATCHLIST_MIN_ABSOLUTE_RECORDS = 10` (drafted) if there's no prior successful sync at
+  all. Failing the floor routes into the existing failure path (`status: 'failed'`,
+  cache untouched) — no new plumbing needed.
+- **BLOCKER 3 — an ASCII-only normalizer is a false-positive-wildcard generator.**
+  `normalizeWatchlistName`'s original character class was `[^A-Z0-9\s]` — anything not
+  ASCII letters/digits/whitespace got stripped. Applied to a name written **entirely** in
+  a non-Latin script (Arabic, for this Jordan-based broker, whose
+  `Customer.languagePreference` defaults to `AR`), that strips every character, leaving
+  `""`. An empty `normalizedName` is not "no match" — it is a universal collision key:
+  every empty-string customer/UBO name would match every empty-string watchlist entry.
+  **Fixed** two ways, deliberately redundant: (1) the character class became
+  Unicode-aware — `\p{L}`/`\p{N}` with the `u` regex flag — so Arabic/Cyrillic/CJK/etc.
+  letters survive as real, distinguishing tokens instead of vanishing; (2) an empty
+  `normalizedName` is refused outright at **three** points — ingestion
+  (`WatchlistSyncService` filters such a record out before `upsertMany`, logged, not
+  silently dropped), match time (`ScreeningService.findRealWatchlistHit` skips a subject
+  name that normalizes to `""` before ever calling the repository, both correctness and
+  a wasted-query avoidance for a Jordan-market customer base), and the repository itself
+  (`WatchlistEntryRepository.findByNormalizedName` returns `null` immediately for an
+  empty string — belt-and-suspenders, since it has no other caller to lean on that). The
+  Unicode fix narrows but does not eliminate the empty-string risk — a name of pure
+  punctuation/whitespace still normalizes to `""`, which is why all three refusals stay
+  in place rather than relying on the character-class fix alone. **A related, accepted
+  MINOR, not fixed**: a real UN entity is listed under the single token "ADF" — any
+  customer/UBO whose legal name normalizes to exactly one short token collides on an
+  exact match the same way a longer name would, with no lower-confidence tier in between
+  (`ScreeningOutcome.PENDING_INVESTIGATION` exists on the model but this module does not
+  use it).
+- **BLOCKER 4 — `classification` was reasoned in a code comment, not cited.** The first
+  pass shipped `WatchlistEntry` with no `DataClassification` field at all, on the
+  reasoning (in a comment, not a citation) that OFAC/UN list content is "public
+  government text, not IBMS customer data." `meta/designs/2026-08-pcms-source-of-truth.md`
+  is explicit that IBMS code must never re-derive a privacy/compliance classification —
+  it must defer to PCMS (`PRIV-STD-*`/`PRIV-SOP-*`) or flag the determination as open,
+  never assert it inline. **Fixed**: `classification DataClassification
+  @default(HIGHLY_CONFIDENTIAL)` added to the model — a conservative default pending an
+  actual PCMS/`PRIV-STD-02` determination, not a claim that the determination is already
+  made. `remarks` (OFAC "Remarks" / UN "COMMENTS1") is exactly why "public" was never the
+  same question as "unclassified": it can carry a real, named individual's DOB and
+  alleged-conduct text verbatim.
+- **3 MINORs, also fixed**: `parseCsvLine` silently merged every field after an
+  unterminated quote into one garbled value instead of rejecting the line — a stray `"`
+  in a hand-typed name/remarks field (this is government-published text about people,
+  not machine-generated data) would corrupt that row rather than being caught; it now
+  returns `null` for such a line, treated as unparseable exactly like a blank one
+  (`parseOfacSdnLine` already had that fallback for blank lines). `ScreeningService.
+  runRecurringBatch`'s catch block gained a comment explaining *why* logging
+  `(err as Error).message` verbatim is safe here — every failure this loop can actually
+  reach is keyed on `customer.id`, never built from a matched name or list content — so a
+  future reader doesn't have to re-derive that safety argument from scratch. The
+  single-short-token collision risk (BLOCKER 3's accepted MINOR, above) is now explicit
+  in the code, not an implicit gap.
+
 ## Where the code lives
 
 - `packages/db/prisma/schema.prisma` — `WatchlistSource`, `WatchlistEntry`,
@@ -130,7 +215,8 @@ so `POST /screening/recurring-batch` can call the identical logic on demand).
   the two cron constants), `watchlist-fetchers.ts` (the network boundary),
   `watchlist-sync.service.ts` (fetch→parse→upsert→prune orchestration),
   `watchlist-sync.controller.ts`, `watchlist-sync.scheduler.ts` (12h).
-- `apps/api/src/repositories/watchlist-entry.repository.ts`.
+- `apps/api/src/repositories/watchlist-entry.repository.ts` — including
+  `findLastSuccessfulRun` (the plausibility-floor baseline, BLOCKER 2 above).
 - `apps/api/src/modules/customer/screening.service.ts` — `findRealWatchlistHit`
   (the match call) and `runRecurringBatch` (moved here from the scheduler).
 - `apps/api/src/modules/customer/screening-batch.scheduler.ts` — now a thin 4-hourly
