@@ -435,25 +435,40 @@ send". Part 3.8 adds nothing else.)*
   customer record. Supply a value that **disagrees** with the recorded one →
   **422**. `languageUsed` always resolves (`Customer.languagePreference` has a
   value); `channel` becomes a **required input** (422 if also omitted) when
-  the customer has no `preferredContactChannel` on record. There is
-  deliberately no per-message language override.
+  the customer has no `preferredContactChannel` on record — **and also when the
+  recorded value is outside `COMMUNICATION_CHANNELS`** (the field is the full
+  `InteractionChannel` enum, so a `MEETING` / `VISIT` preference is treated as
+  "no usable preference" — the caller must name an outbound channel; otherwise
+  the send would be logged with a nonsensical channel, or every explicit
+  channel would 422). There is deliberately no per-message language override.
 - **The marketing-consent gate** (`evaluateMarketingConsent`, pure) — only
   when `isMarketing: true`. The repository loads the customer's `ConsentRecord`
   rows where `purpose = 'MARKETING' OR isMarketing = true` (`PRIV-SOP-04` keeps
-  the two as separate controls; either identifies a marketing-consent row);
-  the pure fn picks the **most recent** by `grantedAt ?? createdAt` (then
-  `createdAt`) — consent is point-in-time, a fresh grant after a withdrawal is
-  a valid re-opt-in. `granted && withdrawnAt == null` ⇒ **allowed** (the row's
-  id is stamped onto `CommunicationLog.consentRecordId`). Otherwise the send is
-  **BLOCKED with a 422** (`reason` ∈ `no_record` / `not_granted` /
-  `withdrawn`), **no `CommunicationLog` row is written** (PDPL: no marketing
-  without consent — a blocked send did not happen), and a **best-effort
-  `REJECT` audit row** records the attempt (`entityType: 'CommunicationLog'`,
-  `entityId: 'blocked'`, `afterValue` = `customerId` + `channel` +
+  the two as separate controls; either identifies a marketing-consent row).
+  **Fail-safe rule:** a send is allowed only if there is an *active grant*
+  (`granted === true && withdrawnAt === null`) **and no withdrawal event is at
+  least as recent as the newest active grant** ("effective time" =
+  `grantedAt ?? createdAt` for a grant, `withdrawnAt` for a withdrawal). A
+  fresh grant after an earlier withdrawal is a valid re-opt-in (the new grant
+  is more recent); a withdrawal recorded after — or at the same instant as —
+  the newest active grant blocks, **even when it sits on a different (older)
+  record** (PDPL: any ambiguity about whether consent still stands is a "no").
+  The exact multi-record precedence is **drafted pending a pinned `PRIV-SOP-04`
+  section** (like the drafted SLA figures); single grant / withdraw on one
+  record is unambiguous. On allow, the active grant's id is stamped onto
+  `CommunicationLog.consentRecordId`. Otherwise the send is **BLOCKED with a
+  422** (`reason` ∈ `no_record` / `not_granted` / `withdrawn`), **no
+  `CommunicationLog` row is written** (PDPL: no marketing without consent — a
+  blocked send did not happen), and a **best-effort `REJECT` audit row**
+  records the attempt (`entityType: 'CommunicationLog'`, `entityId: 'blocked'`,
+  `afterValue` = `customerId` + `channel` +
   `blocked: 'marketing_consent_<reason>'` + `consentRecordId` — **no subject /
   body**). A non-marketing (service / transactional) send never touches the
   consent table — `respectedConsent` stays `true` (contractual necessity, no
-  consent needed) and `consentRecordId` is null.
+  consent needed) and `consentRecordId` is null. **The gate is a read-then-write
+  with no DB constraint** tying the consent read to the `CommunicationLog`
+  insert — tolerable only because this is a *log*, not a sender (delivery is
+  deferred); a real email / SMS dispatch MUST re-check consent at send time.
 - **`subject` / `body` carry the shared `NO_FULL_ACCOUNT_NUMBER` guard**
   (`common/dto.util.ts`, same as #41 / #42) and are **Confidential-tier free
   text** — returned unmasked but **never in an audit row**. The best-effort
@@ -462,20 +477,27 @@ send". Part 3.8 adds nothing else.)*
   `consentRecordId`, `sentAt`) — the #12 `RfqCommunication` / CRM `Interaction`
   precedent (channel + when, not the body). Reads are **not** audited
   (Confidential tier — the #33 / #34 / #41 precedent; contrast the #30 / #40 /
-  #43 aggregate reads).
+  #43 aggregate reads). **Open `PRIV-SOP-04` check**: `/communications/consent-status`
+  returns a named data subject's marketing-consent posture — if PRIV-SOP-04 /
+  Part 10.3 treats a consent-status lookup as a loggable read of consent data,
+  it should audit; no lex mandates it today.
 - **`sentAt` is backdatable** via `parseHistoricalInstant` (the #10 / #12
   helper — an offset-less datetime or a future instant → 422); default now().
 - **No maker/checker** — logging a send is single-actor cross-functional work
   (`communication.send` is granted to four roles for exactly that reason, the
   #10 `interaction.log` shape).
 - **Deferred**: no real delivery integration — this is a *log*, not a sender
-  (no email/SMS gateway, no bounce/read tracking); `isMarketing` is a
-  caller-asserted boolean, not derived from `templateId`; one consent check
-  covers all marketing (no per-campaign / per-purpose granularity beyond
-  MARKETING); `INBOUND` Process-44 rows can be created directly in the DB but
-  the `POST` endpoint only writes `OUTBOUND`; no `CommunicationLog` → CRM 360°
-  timeline wiring (#10 `buildCustomerTimeline` still merges only
-  interactions / policies / claims / complaints); no template library / render
-  step (`templateId` is a free string); no bulk / campaign send; no
-  `Customer` update endpoint, so `preferredContactChannel` is set only at
-  customer creation.
+  (no email/SMS gateway, no bounce/read tracking; **the consent-gate
+  read-then-write TOCTOU is only acceptable because of this — a real dispatch
+  must re-check consent at send time inside a guard**); the multi-record
+  consent precedence is drafted pending a pinned `PRIV-SOP-04` section;
+  `isMarketing` is a caller-asserted boolean, not derived from `templateId`;
+  one consent check covers all marketing (no per-campaign / per-purpose
+  granularity beyond MARKETING); `INBOUND` Process-44 rows can be created
+  directly in the DB but the `POST` endpoint only writes `OUTBOUND`; no
+  `CommunicationLog` → CRM 360° timeline wiring (#10 `buildCustomerTimeline`
+  still merges only interactions / policies / claims / complaints); no
+  template library / render step (`templateId` is a free string); no bulk /
+  campaign send; no `Customer` update endpoint, so `preferredContactChannel`
+  is set only at customer creation (and a non-outbound value there just means
+  every send to that customer must name a channel).
