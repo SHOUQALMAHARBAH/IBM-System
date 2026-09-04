@@ -13,9 +13,9 @@ feedback (#45) and retention (#46). Source:
 (`apps/api/src/modules/sla/`); consent is a PCMS concern —
 `meta/context/pcms-privacy-modules.md` (M03).
 
-**#41 (Customer Requests), #42 (Complaints Management), #43 (SLA Management),
-#44 (Customer Communication) and #45 (Customer Feedback) are built.** #46 is not
-started — see root `README.md` § Scope status.
+**Domain E is complete — #41–46 are all built** (Customer Requests, Complaints
+Management, SLA Management, Customer Communication, Customer Feedback,
+Customer Retention). See root `README.md` § Scope status.
 
 ## The shapes
 
@@ -590,3 +590,102 @@ feedback post-issuance, post-claim, post-renewal".)*
   migration once feedback volume exists; the `FEEDBACK_READ_LIMIT` truncation
   `logger.warn` path has no test (a gap shared with every other Domain E
   list — `@code-reviewer` NIT, not fixed here).
+
+## Customer Retention (Process 46)
+
+*(All `ibms-app` product decisions filed via `/brain-gap` at Part C #46 — the
+backlog's one checkbox: "Automatically open a retention case on renewal
+inactivity or lapse risk". Closes Domain E.)*
+
+- **The model pre-existed and needed NO widening — genuinely no migration.**
+  `RetentionCase` (Part 4 core schema) already had `customerId` / `reason` /
+  `status` / `createdAt` / `closedAt`. More importantly, **`RenewalCase`
+  (Part 3.9 core schema) already carries `retentionEscalatedAt DateTime?`** —
+  a nullable timestamp clearly provisioned for exactly this mechanism, sitting
+  unused until now. `retention-case.manage`
+  (`[SALES_RELATIONSHIP_OFFICER, BRANCH_DEPARTMENT_MANAGER]`) was seeded in
+  `a440c1b` — **no seed change** (149 perms), covering create / read / close /
+  the on-demand sweep trigger under one permission (the #41 / #44 / #45
+  shape — no separate read perm).
+- **Built ahead of its data source — the #8 / #10 / #29 shape.** The renewal
+  module (Part 3.9) that would create a `RenewalCase` per policy approaching
+  expiry is **not built**. In normal running `findRenewalCasesForSweep()`
+  returns an empty set and the sweep is a logged no-op — exactly the #29 Loss
+  Ratio precedent ("no policy has a `RenewalCase`, so it is a logged no-op
+  today"). Today only e2e tests create a `RenewalCase` directly
+  (`claim.e2e-spec.ts`'s Loss Ratio fixture, and #46's own e2e). The sweep
+  exercises for real the moment the renewal module lands.
+- **Not a `WorkflowTransitionService` entity, no maker/checker, no
+  `SlaTimer`** — a factual log (`status`: plain string `open` → `closed`,
+  the model's own vocabulary — no richer lifecycle, no outcome/resolution
+  field to record on close, because the bare schema has none). A retention
+  nudge is a CRM signal, not a PDPL deadline.
+- New `apps/api/src/modules/customer-service/retention-case.{config,service,controller}.ts`
+  + `retention-sweep.scheduler.ts` + 2 DTOs + `repositories/retention-case.repository.ts`,
+  wired as the **5th `CustomerServiceModule` controller** (`AuthModule` newly
+  imported there too, for the scheduler's system-account lookup).
+- **The classifier** (`classifyRenewalCaseForRetention`, pure,
+  `retention-case.config.ts`) — given a `RenewalCase`'s `status` +
+  `triggeredAt`, at most one of the two documented `reason`s, or `null`:
+  - **`lapse_risk`** ⇐ `status === 'LAPSED'`. Checked first — always wins,
+    regardless of `triggeredAt` (a lapsed cycle is a stronger, more urgent
+    signal than mere staleness).
+  - **`renewal_inactivity`** ⇐ the cycle has **not concluded**
+    (`isRenewalCaseConcluded` — `RENEWED` / `CANCELLED`; `LAPSED` is
+    deliberately excluded from "concluded", it is the other trigger) **and**
+    it has sat that way for `RENEWAL_INACTIVITY_THRESHOLD_BUSINESS_DAYS = 30`
+    **business days** since `triggeredAt` — reusing `isFollowUpDue`
+    (`common/follow-up.util.ts`), the exact "has a grace window elapsed
+    since a start timestamp" test the RFQ (#12) / Claim (#27) follow-up
+    sweeps already use. **DRAFTED / UNSOURCED** — Part 3.9 names a
+    `leadTimeDays` default (90 *calendar* days before expiry) but no
+    inactivity-escalation figure; same drafted status as the #41 / #42 SLA
+    figures.
+  - The two reasons are mutually exclusive by construction — there is no
+    third "both" case.
+- **The race-safe invariant is `RenewalCase.retentionEscalatedAt`, not a new
+  `RetentionCase` constraint** (`ibms-brain/meta/lex/race-safe-invariants.md`)
+  — `stampRetentionEscalation` is a **status-conditional `updateMany`**
+  (`WHERE retentionEscalatedAt IS NULL`), the exact
+  `RfqInsurer.followUpAlertSentAt` / `stampFollowUpAlert` shape (#12).
+  `runSweep` stamps first; only if this run won that stamp (`count === 1`)
+  does it create the `RetentionCase` — a concurrent / re-run sweep sees
+  `count === 0` and skips. **`RenewalCase.status` is NEVER written by this
+  sweep** — only the side column, mirroring `followUpAlertSentAt`: the
+  retention sweep observes the renewal lifecycle, it never drives it.
+  Per-row isolation (one bad `RenewalCase` does not abandon the rest of the
+  run — the #9 / #12 / #27 shape).
+- **No "one open `RetentionCase` per customer" invariant** — deliberately not
+  built (it would need a migration; the schema's `RetentionCase` has no
+  `renewalCaseId` / `policyId` link to dedupe against). Two policies for the
+  same customer independently at risk produce two open cases; this is a
+  considered v1 simplification, not a bug.
+- **Endpoints** (all `retention-case.manage`): `POST /retention-cases` (manual
+  open — `{ customerId, reason }`; 404 unknown customer); `POST
+  /retention-cases/sweep` (run the detection sweep now — the #27 `claims
+  follow-up-sweep` shape, declared before the `:id` routes, returns counts
+  only, no case content); `GET /retention-cases?customerId=&status=&reason=`
+  (book-wide, newest-first, capped `RETENTION_CASE_READ_LIMIT = 5000`); `GET
+  /retention-cases/:id`; `POST /retention-cases/:id/close` (`open → closed`,
+  stamps `closedAt`, no body — the model has no field to hold one; idempotent
+  re-close, 404 unknown).
+- **`RetentionSweepScheduler`** runs nightly at **08:00 UTC**, after the
+  07:00 claim follow-up sweep, resolving the `system@ibms.internal` service
+  account like every other scheduler (`ibms-brain/meta/lex/...` — the A.5
+  precedent); it delegates entirely to `RetentionCaseService.runSweep`
+  (shared with the on-demand endpoint) rather than looping itself.
+- Audit: best-effort `CREATE RetentionCase` per opened case (sweep or manual
+  — ids + `reason` + `status`; no free text exists on the model to guard or
+  exclude either way), `UPDATE` on close. Reads are not audited (Confidential
+  tier — the #33 / #34 / #41 / #44 / #45 precedent).
+- **Deferred**: the renewal module (Part 3.9) itself is not built, so the
+  sweep has no real `RenewalCase` traffic yet; the 30-business-day inactivity
+  threshold is drafted; no per-customer dedup of open cases (above); no
+  outcome / resolution field on close (the bare schema has none — "was the
+  customer retained or lost" is not recorded); no link from a `RetentionCase`
+  back to the `RenewalCase` / `Policy` that triggered it (only
+  `RenewalCase.retentionEscalatedAt` records that *a* escalation happened, not
+  which `RetentionCase` row it produced); no auto-close when the underlying
+  `RenewalCase` eventually reaches `RENEWED`; no `CustomerFeedback`-style
+  index gap here (this pass added no new columns to index); the truncation-
+  `logger.warn` path is untested (the same gap noted for #45).
