@@ -645,16 +645,39 @@ inactivity or lapse risk". Closes Domain E.)*
     third "both" case.
 - **The race-safe invariant is `RenewalCase.retentionEscalatedAt`, not a new
   `RetentionCase` constraint** (`ibms-brain/meta/lex/race-safe-invariants.md`)
-  — `stampRetentionEscalation` is a **status-conditional `updateMany`**
-  (`WHERE retentionEscalatedAt IS NULL`), the exact
-  `RfqInsurer.followUpAlertSentAt` / `stampFollowUpAlert` shape (#12).
-  `runSweep` stamps first; only if this run won that stamp (`count === 1`)
-  does it create the `RetentionCase` — a concurrent / re-run sweep sees
-  `count === 0` and skips. **`RenewalCase.status` is NEVER written by this
-  sweep** — only the side column, mirroring `followUpAlertSentAt`: the
-  retention sweep observes the renewal lifecycle, it never drives it.
-  Per-row isolation (one bad `RenewalCase` does not abandon the rest of the
-  run — the #9 / #12 / #27 shape).
+  — **`escalateAndCreateRetentionCase` (`retention-case.repository.ts`) stamps
+  + creates in ONE `$transaction`** (a deliberate local exception to this
+  codebase's no-`$transaction` convention, the `claim.repository.ts
+  createNotification` / `quotation.repository.ts` shape). The stamp is a
+  **status-conditional `updateMany`** (`WHERE retentionEscalatedAt IS NULL AND
+  status NOT IN (RENEWED, CANCELLED)`) — the `RfqInsurer.followUpAlertSentAt` /
+  `stampFollowUpAlert` shape (#12), but with the `status` re-assertion
+  `stampFollowUpAlert` didn't need. `runSweep` calls this once; a `null`
+  return means the row was already escalated OR concluded between the sweep's
+  load and this write — either way, skip (`skippedConcurrent`, a distinct
+  counter from `failed`). **`RenewalCase.status` is NEVER written by this
+  sweep** — only the side column (checked in the `where`, never assigned in
+  `data`): the retention sweep observes the renewal lifecycle, it never
+  drives it. Per-row isolation (one bad `RenewalCase` does not abandon the
+  rest of the run — the #9 / #12 / #27 shape).
+  - **`@code-reviewer` caught two problems in the first (non-transactional)
+    pass, both now fixed**: (1) **BLOCKER** — stamp-then-create as two
+    separate writes meant a `create` failure *after* a successful stamp
+    permanently stranded that `RenewalCase` as "escalated" with no
+    `RetentionCase` ever created (and no future sweep would reconsider it,
+    since `findRenewalCasesForSweep` filters on `retentionEscalatedAt: null`)
+    — the `$transaction` means a failed create rolls the stamp back too, so
+    the row stays eligible for the next run; (2) **MAJOR** — the stamp's
+    `where` originally re-asserted only `retentionEscalatedAt: null`, not
+    `status` — a `RenewalCase` concluding (`RENEWED`/`CANCELLED`) *between*
+    the sweep's load and the stamp would still pass the stamp and open a
+    spurious case for a customer who just renewed; fixed by re-asserting
+    `status NOT IN (RENEWED, CANCELLED)` in the same `where`
+    (`ibms-brain/meta/lex/race-safe-invariants.md` — re-assert every field
+    the caller's decision depended on, not only the guard column). Both gaps
+    are dormant today (no `RenewalCase` traffic exists yet) but would be live
+    the day the renewal module lands — exactly why the review caught them
+    now rather than later.
 - **No "one open `RetentionCase` per customer" invariant** — deliberately not
   built (it would need a migration; the schema's `RetentionCase` has no
   `renewalCaseId` / `policyId` link to dedupe against). Two policies for the
