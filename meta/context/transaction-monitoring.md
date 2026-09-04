@@ -72,21 +72,41 @@ should not need a schema change.
   names the patterns, not figures. Do not cite these as Compliance-sourced until a real
   CBJ AML figure is identified — same treatment `kyc-aml-sla-timers.md` gives its own
   draft numbers.
-- **A `Receipt` with no recorded `PaymentChannel` cannot be classified as
-  third-party-sourced, and is silently skipped, not flagged.** `PaymentChannel` linkage
-  on a `Receipt` is optional (#38) — a cash payment or one with no channel on file is a
-  genuine detection gap, not a false negative this module claims to close.
+- **`third_party_payment_source` is DORMANT in production, not merely gapped — a
+  `@code-reviewer` BLOCKER on the first pass.** `CollectionService.
+  assertReceiptChannelUsable` (`apps/api/src/modules/finance/collection.service.ts` —
+  Process 38) already rejects any NEW `Receipt` whose channel belongs to a customer
+  other than the one invoiced, *before* a `Receipt` row can ever exist with that
+  mismatch, and `PaymentChannel` has no reassign-owner path. So this classifier can
+  never fire against a `Receipt` created through the real `POST /invoices/:id/receipt`
+  path — `transaction-monitoring.e2e-spec.ts` only exercises it by inserting a `Receipt`
+  directly via Prisma, deliberately bypassing `CollectionService`, to prove the
+  classifier logic itself, not that the scenario is reachable. It stays coded,
+  unit-tested, and wired into the sweep as a forward-compatible detector — it activates
+  with no further code change the day a legitimate cross-customer payment path is
+  added, or a third-party payer identity is recorded outside the approved-channel
+  system entirely. Separately, and more narrowly: **a `Receipt` with no recorded
+  `PaymentChannel` at all** cannot be classified either way by this function and is
+  silently skipped — a genuine, much smaller gap, not the same issue as the dormancy
+  above.
 - **The two race-safe invariants are different shapes, on purpose**
   (`race-safe-invariants.md`). The event-scoped patterns get a plain
   `@@unique([patternType, sourceEntityId])` — Postgres treats every `NULL`
   `sourceEntityId` as distinct from every other `NULL`, so this constraint is silently
-  inert for the two aggregate patterns (which never set `sourceEntityId`) while still
-  stopping the sweep from re-alerting the same `Receipt` forever. The aggregate
-  patterns get their own hand-authored partial `UNIQUE ("customerId","patternType")
-  WHERE status='open' AND "sourceEntityId" IS NULL` — the `UpSellRecommendation` /
-  `ClaimFollowUpAlert` shape: at most one *open* alert per customer/pattern at a time,
-  but a fresh one can open again once the prior one is closed and the pattern recurs.
-  Both are backed by a service-level pre-check (readable, not the real guard) plus a
+  inert for the two aggregate patterns (which never set `sourceEntityId`) **and for a
+  manual log** (which never sets it either). The aggregate patterns get their own
+  hand-authored partial `UNIQUE ("customerId","patternType") WHERE status='open' AND
+  "patternType" IN ('frequent_cancellations','frequent_refunds')` — the
+  `UpSellRecommendation` / `ClaimFollowUpAlert` shape: at most one *open* alert per
+  customer/pattern at a time, but a fresh one can open again once the prior one is
+  closed and the pattern recurs. **This predicate is scoped directly to `patternType`,
+  NOT to `sourceEntityId IS NULL`** — a `@code-reviewer` BLOCKER on the first pass: a
+  `sourceEntityId IS NULL` predicate would also have caught two unrelated manual
+  `other`-pattern alerts for the same customer (the manual endpoint's own reason for
+  existing — a repeated, ongoing note), throwing an uncaught 500 with no pre-check or
+  catch on that write path. `TransactionMonitoringService.create()` now also wraps its
+  write in a `P2002` catch → `ConflictException` (409), matching every other write path
+  in this file. Both invariants are backed by a service-level pre-check (readable, not the real guard) plus a
   `P2002` catch mapped to `skippedExisting` (never `failed`) for the genuine race.
 - **Duplicate alerts are not treated as a hard business-integrity risk here** — unlike a
   double refund or a double policy issuance, an extra monitoring alert is harmless (a
@@ -130,6 +150,19 @@ should not need a schema change.
   disposal, DSR closure) does not name this process, and `aml.escalate` is a
   single-role grant with no paired approver permission in the seed — the #42
   `complaint.escalate` shape, not the #23-28 claim-settlement dual-approver shape.
+- **`get()`/`list()` DO write a best-effort `READ` audit row** — a `@code-reviewer`
+  MAJOR on the first pass, which had followed the Confidential-tier #33/#34/#41/#44/#45
+  "reads are not audited" precedent. Wrong same-tier comparison: `TransactionMonitoringAlert`
+  defaults to `HIGHLY_CONFIDENTIAL`, the same tier as `Claim`, and `sensitive-data-
+  handling.md` / Part 10.3 requires every read of Sensitive/Highly-Confidential Personal
+  Data to be logged — `ClaimService.get()`'s `auditSensitiveRead` (ids/counts only,
+  `isSensitiveDataAccess: true`) is the correct same-tier precedent, not the
+  Confidential-tier one.
+- **`escalate()` checks the escalation flag before the `status` guard, not after** — a
+  MINOR fix: an alert escalated and then closed (`close()` never checks the escalation
+  flag) must still report itself idempotently on a retried `escalate()`, the same
+  contract every other already-done case in this file honours, rather than 422 just
+  because it is no longer `open`.
 
 ## Where the code lives
 
