@@ -543,24 +543,29 @@ feedback post-issuance, post-claim, post-renewal".)*
   #44 helper — an offset-less datetime or a future instant → 422; default
   now()), for logging a response captured after the fact (verbally on a call,
   on a paper form).
-- **`comments` carries NO `NO_FULL_ACCOUNT_NUMBER` guard**, unlike #41 / #42 /
-  #44's free-text fields — a deliberate divergence, not an oversight. That
-  guard exists for a field sitting *next to a masked-data path* (a "change my
-  bank account" service request, a premium-dispute complaint) where a customer
-  could plausibly paste a full account/card number expecting it to be acted
-  on. Feedback `comments` is a satisfaction survey's open-text box — the CRM
-  `Interaction.summary` shape (`log-interaction.dto.ts` carries no such guard
-  either), not the #41/#42/#44 shape. If a future Domain E item finds this
-  wrong, extend the guard here too — the constant is centralized in
-  `common/dto.util.ts` either way.
-- **`comments` is deliberately excluded from the `CREATE` audit `afterValue`**
-  — `afterValue` = ids + `context` + `score` + `submittedAt` only. This follows
+- **`comments` DOES carry the `NO_FULL_ACCOUNT_NUMBER` guard** — same as #41 /
+  #42 / #44's free-text fields. A first pass omitted it (reasoning it was the
+  CRM `Interaction.summary` shape, not the #41/#42/#44 shape); the
+  `@code-reviewer` pass corrected this as a MAJOR: unlike an arbitrary
+  staff-authored CRM note, feedback `comments` is customer-typed text
+  *solicited immediately after* a claim settlement, a policy issuance, or a
+  renewal — precisely the moment a dissatisfied customer is most likely to
+  write something like "you still haven't refunded my JOD to account
+  0123456789" (`sensitive-data-handling.md` § "What triggers this rule" names
+  "a claim note" as exactly this scenario), and the field is book-wide
+  readable by any Sales officer. The guard now applies here too.
+- **`comments` IS still deliberately excluded from the `CREATE` audit
+  `afterValue`** — `afterValue` = ids + `context` + `score` + `submittedAt`
+  only. This is the *one* surviving divergence from #41/#42/#44, and follows
   the CRM `Interaction.summary` precedent (`crm.service.ts` `logInteraction`
   logs channel/`occurredAt`, never `summary`), not #41 (`detail`) / #42
-  (`issue`/`resolution`), which DO log their free text verbatim. The reasoning:
-  feedback `comments` is the customer's own subjective reflection — closer in
-  kind to a private relationship-log note than to an operational "what was
-  done / why" business-action record, so the more conservative precedent wins.
+  (`issue`/`resolution`), which DO log their free text verbatim. The
+  reasoning: feedback `comments` is the customer's own subjective reflection —
+  closer in kind to a private relationship-log note than to an operational
+  "what was done / why" business-action record, so the more conservative
+  precedent wins for the audit trail (the input guard, unlike the audit
+  exclusion, is unaffected by that distinction — a full account number is
+  equally wrong to capture either way).
 - **No ownership-based read gating.** `feedback.log` is single-role
   (`SALES_RELATIONSHIP_OFFICER`) and is the sole gate on both write and read —
   book-wide, not filtered by `Customer.ownerUserId` (the #41 / #42 / #44
@@ -578,4 +583,10 @@ feedback post-issuance, post-claim, post-renewal".)*
   not built — logging is always a manual `POST`); no duplicate-response
   detection (a customer can submit feedback for the same context repeatedly);
   no aggregation / CSAT-dashboard reporting (the #40 / #43 "backend for a Part
-  E dashboard" shape is not repeated here — reads are a plain filtered list).
+  E dashboard" shape is not repeated here — reads are a plain filtered list);
+  **`CustomerFeedback` has no index at all** — not even `@@index([customerId])`
+  — unlike every sibling Domain E model (`@code-reviewer` NIT); the "no
+  migration" framing of this pass deliberately left it, worth a follow-up
+  migration once feedback volume exists; the `FEEDBACK_READ_LIMIT` truncation
+  `logger.warn` path has no test (a gap shared with every other Domain E
+  list — `@code-reviewer` NIT, not fixed here).
