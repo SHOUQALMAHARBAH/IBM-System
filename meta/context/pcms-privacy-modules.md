@@ -52,12 +52,14 @@ Governing-document map (cite these, don't restate them):
 
 ## Where the code lives
 
-**M03 (Consent Management)** — `apps/api/src/modules/pdpl/` (`ibms-app`, landed
-2026-09-04, backlog Part D §5.1 / Process #52). See `meta/context/consent-management.md`
-for the detail. The other eleven modules have no code yet — `ibms-app`'s Prisma schema
-models several of their entities already (`DataSubjectRequest`, `RetentionScheduleItem`,
-`DisposalBatch`, `LegalHold`, `CertificateOfDestruction` among them — see
-`meta/context/data-retention-and-disposal.md` for M06's), but nothing calls them.
+**M03 (Consent Management)** and **M04 (Data Subject Request Management)** —
+`apps/api/src/modules/pdpl/` (`ibms-app`, landed 2026-09-04 and 2026-09-05 respectively,
+both under backlog Part D / Process #52). See `meta/context/consent-management.md` and
+`meta/context/data-subject-requests.md` for the detail. The other ten modules have no
+code yet — `ibms-app`'s Prisma schema models several of their entities already
+(`RetentionScheduleItem`, `DisposalBatch`, `LegalHold`, `CertificateOfDestruction` among
+them — see `meta/context/data-retention-and-disposal.md` for M06's), but nothing calls
+them.
 
 Field-level schema for all 14 PCMS entities: `PRIV-SRS-02_Data_Dictionary_and_Entity_Model.xlsx`, sheets `PolicyDocument` through `User - Role`. Process flow, business rules, and service levels for each module: `PRIV-SRS-01_Privacy_Compliance_System_Requirements_Specification.docx` §5.1–5.12.
 

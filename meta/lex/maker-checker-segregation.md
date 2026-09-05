@@ -16,6 +16,7 @@ Covered actions (Part 5.2 and the M-series business rules in `PRIV-SRS-01`):
 | Department Manager who nominates a disposal batch | DPO who gives final approval | `PRIV-SRS-01` M06, Part 5.2 |
 | Employee who requests a data share | DPO who approves it | `PRIV-SRS-01` M08 |
 | Relationship Owner who assesses a third party | DPO who approves High-tier go-live | `PRIV-SRS-01` M07 |
+| DPO officer who processes a Data Subject Request (fulfil/partially-fulfil/reject) | A different DPO officer who closes it | `PRIV-SRS-01` M04, `PRIV-SOP-05`, Part 5.2 |
 
 ## What triggers this rule
 

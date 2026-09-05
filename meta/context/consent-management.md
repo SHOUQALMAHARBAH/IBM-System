@@ -109,8 +109,9 @@ trail — Process 44's pre-existing `evaluateMarketingConsent` already reads it 
 
 ## Out of scope for this file
 
-The other eight Part D / PCMS systems — M04 (DSR), M05 (access governance — partially
-covered by `roles-and-segregation-of-duties.md`), M06 (Retention & Disposal —
+M04 (DSR) is now built too — see `meta/context/data-subject-requests.md`. The other
+seven Part D / PCMS systems — M05 (access governance — partially covered by
+`roles-and-segregation-of-duties.md`), M06 (Retention & Disposal —
 `data-retention-and-disposal.md`), M07 (Vendor Risk), M08 (Data Sharing), M09
 (Incident & Breach), M10 (DPIA), the privacy-notice / RoPA requirements, and the DPO
 Workspace dashboard — none of these are built yet. `pcms-privacy-modules.md` is the
