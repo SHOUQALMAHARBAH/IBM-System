@@ -17,6 +17,11 @@ Covered actions (Part 5.2 and the M-series business rules in `PRIV-SRS-01`):
 | Employee who requests a data share | DPO who approves it | `PRIV-SRS-01` M08 |
 | Relationship Owner who assesses a third party | DPO who approves High-tier go-live | `PRIV-SRS-01` M07 |
 | DPO officer who processes a Data Subject Request (fulfil/partially-fulfil/reject) | A different DPO officer who closes it | `PRIV-SRS-01` M04, `PRIV-SOP-05`, Part 5.2 |
+| Data Protection Officer who classifies an incident as Material | A different Executive Management officer who co-signs | Process 55/M09, Governing Policy §12, `PRIV-SOP-09` |
+
+## A maker/checker pair sharing ONE permission across two roles
+
+`ibms-app`'s Incident Management build (Process 55) is the first place in the codebase where a maker/checker pair's two roles (`DATA_PROTECTION_OFFICER`, `EXECUTIVE_MANAGEMENT`) are granted the SAME permission code (`incident.classify`) rather than two distinct codes the way every other pair in the table above uses (`kyc.capture`/`kyc.approve`, `refund.raise`/`refund.approve`, `dsr.handle`/`dsr.close`, ...). This is an accepted, deliberate exception, not a violation — the segregation is still enforced structurally (an in-service role check on top of the permission grid, `assertDifferentActors`, and a DB `CHECK` constraint all apply before either sub-action can write), verified by `@code-reviewer` to correctly block a hypothetical dual-role user from self-classifying and self-co-signing. The cost is auditability: a review of the permission-to-role grid ALONE (the normal way to answer "who can do X" in this codebase) cannot see that one role's grant is scoped to one sub-action and the other role's grant to the other. **New maker/checker pairs should default to two distinct permission codes** (the established shape) unless there is a specific reason to share one, and if one IS shared, say so explicitly in the entity's own context file the way `ibms-brain/meta/context/incident-management.md` does.
 
 ## What triggers this rule
 
