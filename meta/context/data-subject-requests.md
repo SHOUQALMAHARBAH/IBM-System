@@ -1,6 +1,22 @@
 # Data Subject Request Management (M04)
 
-**Last verified:** 2026-09-05 · **Owner:** DPO (role, not yet a named person)
+**Last verified:** 2026-09-06 · **Owner:** DPO (role, not yet a named person)
+
+**Re-verified 2026-09-06** against Part D §5.1's own DSR checklist text (pasted whole
+by the user as item #2 of Part D's 9-system checklist, worked one item at a time after
+Consent/M03): "logged the same business day regardless of channel, an
+identity-verification step, SLA computation (15/10 business days + an Access-only
+extension), a DPO handler assignment, a mandatory 'partially fulfilled' path when a
+retention flag is still open (never closeable as 'fully fulfilled')." Every clause maps
+onto ALREADY-BUILT M04 functionality below — confirmed by re-running the full suite (no
+regression from the 5 sessions of work since M04 shipped), not just re-reading code. **No
+code changes were needed** — this is a "verified, not built" outcome (the #47 KYC/#50
+Conflict-of-Interest/#68 Internal IT shape), just applied to a PDPL system rather than a
+Domain F/H one. The seed data's own permission descriptions (`dsr.log`: "Log a Data
+Subject Request the same business day it is received"; `dsr.close`: "Close a Data
+Subject Request (never closeable while a retention flag is open)") quote this exact
+backlog wording near-verbatim — strong evidence M04 was built directly against this same
+source text originally, not coincidentally compatible with it.
 
 ## What this is
 
