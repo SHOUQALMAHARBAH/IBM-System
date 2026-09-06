@@ -18,6 +18,7 @@ The current SLA registry (all sourced from `PRIV-SRS-01` §5, cross-checked agai
 | Disposal batch execution (M06) | 30 days from batch approval | Feeds KPI: % disposal batches completed within 30 days |
 | Legal Hold necessity review (M06) | Every 6 months | Auto-reminder to DPO/Legal Counsel |
 | Vendor annual review (M07) | Annual, Medium/High tier | — |
+| Vendor access revocation on termination (M07) | 2 business days | — |
 | Data sharing decision (M08) | 3 business days standard; 1 business day for a recognized regulatory channel | — |
 | Incident containment (M09) | 4 hours for critical severity | — |
 | Material incident — Senior Management notification (M09) | 1 hour from Material classification | — |
