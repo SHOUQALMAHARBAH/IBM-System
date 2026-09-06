@@ -122,7 +122,7 @@ EXECUTIVE_MANAGEMENT]`) — already pre-seeded ahead of #59-65 — gates every
 route, including the manual compute trigger. **No new permission was needed
 for this process**, unlike #58 (`kpi-dashboard.view`) and #59
 (`sales-target.manage`), each of which needed exactly one new permission —
-the `internal-controls.audit` "Run audit now" precedent: the same audience
+the `internal-controls.view` "Run audit now" precedent: the same audience
 who views a report is trusted to trigger an on-demand recompute of it.
 
 ## Where the code lives

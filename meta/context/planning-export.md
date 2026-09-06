@@ -63,8 +63,10 @@ deliberately excluded, the #57 lesson.
 
 A POST route (`POST /planning-export`), not a GET, even though it is a
 pure read with no persisted side effect of its own — the permission's own
-verb ("generate") matches the `internal-controls.audit` "Run audit now"
-shape more than the `.view` shape #58-63 use.
+verb ("generate") matches the `internal-controls.view` "Run audit now"
+button shape (a GET gated by a `.view`-suffixed permission, but presented
+as an action the user triggers) more than the plain auto-loading `.view`
+dashboards #58-63 use.
 
 ## The first real writer of `AuditAction.EXPORT`
 

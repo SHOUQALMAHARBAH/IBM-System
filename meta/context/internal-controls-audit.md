@@ -110,9 +110,24 @@ shape violation record.
 UTC (after the 09:00 transaction-monitoring sweep), resolving the
 `system@ibms.internal` account — the same scheduler shape every other nightly
 sweep in this codebase uses. `GET /internal-controls/self-approval-audit`
-(`internal-controls.audit` — `[COMPLIANCE_OFFICER, EXECUTIVE_MANAGEMENT,
+(`internal-controls.view` — `[COMPLIANCE_OFFICER, EXECUTIVE_MANAGEMENT,
 EXTERNAL_AUDITOR]`, a genuinely NEW permission, not pre-seeded ahead of time
 the way #55's four were) runs the same scan on demand.
+
+**Renamed from `internal-controls.audit` to `internal-controls.view`**
+(2026-09-06, no functional change — same route, same roles) — the original
+name broke `permissions.spec.ts`'s "External Auditor is read-only by
+construction" test, which checks by NAME that every EXTERNAL_AUDITOR-granted
+code ends in `.read`/`.view`. This route was always a plain `GET` with no
+mutation; every other EXTERNAL_AUDITOR grant in the seed already ends in
+`.read`/`.view` (`audit-log.read`, `document-history.read`,
+`workflow-history.read`, `sla-dashboard.view`, `claims-analytics.view`,
+`financial-report.view`, ...) — this permission was the one outlier, named
+after the endpoint's own verb ("audit") rather than the naming convention
+its own role grant is checked against. Fixing the name, not the test, since
+the naming convention is a real invariant (Part 5.1: External Auditor's
+"Cannot: Modify any record") and every sibling permission already follows
+it.
 
 ## Why a clean run is the expected outcome, not a surprise
 
@@ -141,7 +156,7 @@ via the e2e test's own timeout, not a review comment).
 - `apps/api/src/modules/internal-controls/` — `internal-controls.
   {config,service,controller}.ts`, `internal-controls-audit.scheduler.ts`,
   `internal-controls.module.ts`.
-- `packages/db/prisma/seed-data/permissions.ts` — `internal-controls.audit`.
+- `packages/db/prisma/seed-data/permissions.ts` — `internal-controls.view`.
 - `apps/web/app/(app)/internal-controls/page.tsx` +
   `lib/internal-controls/internal-controls-api.ts`.
 
