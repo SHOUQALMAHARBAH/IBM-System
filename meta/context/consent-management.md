@@ -1,6 +1,6 @@
 # Consent Management (M03)
 
-**Last verified:** 2026-09-04 · **Owner:** DPO (role, not yet a named person)
+**Last verified:** 2026-09-06 · **Owner:** DPO (role, not yet a named person)
 
 ## What this is
 
@@ -91,27 +91,124 @@ trail — Process 44's pre-existing `evaluateMarketingConsent` already reads it 
   index on `SlaTimer(entityType, entityId, workflowName) WHERE resolvedAt IS NULL` — is
   worth doing opportunistically next time this file is touched, not before.
 
+## Touchpoint wiring (2026-09-06)
+
+The backlog names 7 explicit touchpoints where consent must be captured: lead
+capture, onboarding/KYC, needs & risk assessment, RFQ/market placement, claims,
+Group Medical/Life & Motor Fleet, and renewal & cross/up-sell. M03's original
+build (above) shipped a generic capture screen with no per-touchpoint wiring —
+this pass closed that gap for 5 of the 7, and documents the other 2 as a real,
+deliberate, still-open gap rather than a silent omission.
+
+**5 touchpoints wired — Lead capture, onboarding/KYC, needs & risk
+assessment, RFQ/market placement, cross-sell & up-sell:**
+
+- **Lead capture is the one touchpoint that pre-dates a Customer row** — a
+  `Lead` has no `customerId`/`insuredPersonId` to hang a `ConsentRecord` off
+  of. `ConsentRecord` gained a THIRD optional owner column, `leadId`
+  (migration `20260913120000`), FK to `Lead`, `ON DELETE SET NULL` (matching
+  the existing `customerId`/`insuredPersonId` FKs). Exactly-one-of-three is
+  validated by a NEW, Consent-specific function
+  (`hasExactlyOneConsentOwner` in `consent.config.ts`) — deliberately NOT a
+  generalization of the shared `common/dto.util.ts#hasExactlyOneOwner`,
+  which DSR (M04) also depends on and has no `leadId` concept; two owner
+  kinds and three owner kinds are genuinely different shapes for different
+  callers, not a single function outgrowing its interface.
+  `LeadRepository.create()` now creates the `Lead` row AND its lead-capture
+  `ConsentRecord` (`purpose: MARKETING`, `granted: dto.marketingConsentGranted`)
+  in ONE interactive transaction — a deliberate local exception to this
+  codebase's no-`$transaction` convention, the
+  `EmployeeRepository.terminate()` "create-together" shape.
+  `Lead.marketingConsentGranted` (the pre-existing boolean, unticked by
+  default since the original #1 build) is UNCHANGED and still the fast
+  display read the Lead list/detail screens use — the new `ConsentRecord`
+  row is additive, making the SAME decision register-visible and
+  2-business-day-withdrawal-capable, which the bare boolean never was.
+  `CreateLeadDto` gained a new mandatory `consentTextVersion` field
+  (the exact `CreateConsentRecordDto.consentTextVersion` shape) — a real,
+  intentional breaking change to `POST /leads`'s contract, not an
+  oversight; every existing caller (e2e fixtures, the web intake form) was
+  updated to supply it.
+- **Onboarding/KYC, needs & risk assessment, RFQ/market placement,
+  cross-sell, up-sell all already operate on an existing `Customer`** — no
+  schema change needed for these five; each touchpoint's own web detail
+  page mounts a new shared `apps/web/components/pdpl/ConsentCaptureWidget.tsx`,
+  which is nothing more than a thin, reusable wrapper around the SAME
+  generic `POST/GET /consent-records` API the standalone Consent page
+  already called — no new backend capability, purely a UI-reachability fix
+  (the requirement was never "build a new capture mechanism," it was "make
+  the existing one reachable AT the touchpoint," per user direction after
+  the two genuinely-blocked touchpoints below were flagged).
+  - Needs Assessment has no direct `customerId` (only via
+    `RiskProfile.customerId`) — `NeedsAssessmentService.get()` now resolves
+    it via the ALREADY-INJECTED `RiskProfileRepository` (no new
+    dependency, no repository/schema change).
+  - RFQ has no direct `customerId` either (only via
+    `Opportunity.customerId`) — `RfqService.get()` resolves it the same
+    way, via the ALREADY-INJECTED `OpportunityRepository` and the
+    visibility-check helper (`findVisibleRfq`) that was already resolving
+    it internally. Widening the shared `RfqWithSubmissions` Prisma-payload
+    type itself was tried first and reverted — resolving in the SERVICE
+    from an already-injected repository is strictly less invasive than
+    widening a type five other call sites share.
+  - Purpose mapping per touchpoint: onboarding/KYC → `KYC_AML`; needs &
+    risk assessment → `UNDERWRITING`; RFQ/market placement →
+    `SHARING_WITH_INSURER` (data is being shared with insurers at this
+    step); cross-sell and up-sell → `MARKETING` (a solicitation).
+
+**2 touchpoints deliberately NOT wired — a real, documented gap, not an
+oversight (confirmed with the user before proceeding rather than silently
+expanding scope):**
+
+- **Claims** — there is no web UI for an individual claim record anywhere
+  in `apps/web` (only the `claims-analytics` AGGREGATE page); claim
+  management is API-only. There is no page to mount a widget onto. The
+  generic `/consent` screen remains the reachable capture path for a
+  claim's `customerId` + `purpose: CLAIMS` today.
+- **Group Medical/Life & Motor Fleet** — this touchpoint is about consent
+  for the COVERED INDIVIDUALS (dependents/employees/drivers) under a
+  group/fleet policy, which maps to `InsuredPerson`. `InsuredPerson` has
+  ZERO CRUD anywhere in this codebase — no create/list/get, no web page,
+  nothing to attach a widget to. Building an `InsuredPerson` management
+  module is a substantial undertaking of its own (comparable in scope to
+  #66 Employee or #69 InformationAsset), not something to build as a side
+  effect of a Consent pass.
+
+Closing these 2 remaining touchpoints requires building the underlying
+capability (a Claims detail UI; an `InsuredPerson` CRUD module) FIRST —
+they are not Consent bugs, they are missing prerequisite infrastructure.
+
 ## Where the code lives
 
 - `packages/db/prisma/schema.prisma` — `ConsentRecord`, `ConsentPurpose` (search "PART
   4.1" / "Consent Management").
 - `apps/api/src/modules/pdpl/` — `consent.config.ts` (pure: view/audit-snapshot
-  builders, `hasExactlyOneOwner`), `consent.service.ts` (the two-step withdrawal flow),
+  builders, `hasExactlyOneOwner` re-export, `hasExactlyOneConsentOwner`),
+  `consent.service.ts` (the two-step withdrawal flow),
   `consent.controller.ts`, `dto/`.
 - `apps/api/src/repositories/consent-record.repository.ts` — owns the writes.
+- `apps/api/src/repositories/lead.repository.ts` — `create()`'s Lead+ConsentRecord
+  transaction (touchpoint #1).
 - `apps/api/src/repositories/communication.repository.ts`'s `marketingConsentRecords` +
   `apps/api/src/modules/customer-service/communication.config.ts`'s
   `evaluateMarketingConsent` — Process 44's pre-existing *reader*; M03 does not
   duplicate this logic, only feeds it real rows.
 - `apps/api/src/modules/sla/sla-registry.config.ts` — the `consent_withdrawal` entry
   (2 business days, `PRIV-STD-01` §6.3 / `PRIV-SOP-04`), unused before this module.
-- `apps/web/app/(app)/consent/page.tsx` + `apps/web/lib/pdpl/consent-api.ts`.
+- `apps/web/app/(app)/consent/page.tsx` + `apps/web/lib/pdpl/consent-api.ts` — the
+  standalone register screen (now also supports the `leadId` owner kind).
+- `apps/web/components/pdpl/ConsentCaptureWidget.tsx` — the shared touchpoint widget,
+  mounted on `customers/[id]`, `needs-assessments/[id]`, `rfqs/[id]`,
+  `cross-sell/[id]`, `up-sell/[id]`.
 
 ## Out of scope for this file
 
-M04 (DSR) is now built too — see `meta/context/data-subject-requests.md`. The other
-seven Part D / PCMS systems — M05 (access governance — partially covered by
-`roles-and-segregation-of-duties.md`), M06 (Retention & Disposal —
+M04 (DSR) is now built too — see `meta/context/data-subject-requests.md`. Building a
+Claims web UI or an `InsuredPerson` CRUD module — the two prerequisites the deliberate
+touchpoint gaps above are waiting on — is out of scope here; when either lands, this
+file's own touchpoint-wiring section is the place to add the 6th/7th widget mount, not
+a new file. The other seven Part D / PCMS systems — M05 (access governance — partially
+covered by `roles-and-segregation-of-duties.md`), M06 (Retention & Disposal —
 `data-retention-and-disposal.md`), M07 (Vendor Risk), M08 (Data Sharing), M09
 (Incident & Breach), M10 (DPIA), the privacy-notice / RoPA requirements, and the DPO
 Workspace dashboard — none of these are built yet. `pcms-privacy-modules.md` is the
