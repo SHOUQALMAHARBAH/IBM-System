@@ -1,6 +1,6 @@
 # PCMS — the privacy/compliance module map
 
-**Last verified:** 2026-08-22 · **Owner:** DPO (role, not yet a named person)
+**Last verified:** 2026-09-07 · **Owner:** DPO (role, not yet a named person)
 
 ## What this is
 
@@ -49,17 +49,24 @@ Governing-document map (cite these, don't restate them):
 - **Record destruction is always dual-control** (Department Manager nominates, DPO approves) **and always produces a Certificate of Destruction** — a `DisposalBatch` cannot reach `Closed` without one attached (M06).
 - **Regulatory-channel data shares (CBJ Data Portal/iFile) still get classification and minimum-necessary-data checks** even though the standard vendor-risk-assessment step is bypassed (M08, `PRIV-STD-04` §6.1). "It's going to the regulator" is not an exemption from classification discipline.
 - **The DPO may be the same person as the Compliance Officer only where no material conflict of interest with IT/security operations exists** (Part 5.1) — do not assume the two roles are always distinct, or always combinable; it's a case-by-case call recorded per organization.
+- **`IBMS_Full_Scope_Context_Document.docx`'s Part 6 section numbers and `PRIV-SRS-01`'s M01-M12 module numbers are two DIFFERENT taxonomies, not aliases of each other.** Two backlog Part D checklist items — Cross-Border Transfer and Notices — both cite "Part 6.2" in the Prisma schema's own doc comments, but NEITHER maps onto a single named M01-M12 module: M05 is already taken ("Data Collection & Access Governance," a different system), and no other M-number describes either one either. Discovered when a build session initially mislabeled Cross-Border Transfer as "M05" by pattern-matching the next unused-looking number instead of checking the module table above — caught and fixed before push. Cite these two by "Part 6.2" alone; do not invent an M-number for a backlog item the map doesn't name.
 
 ## Where the code lives
 
-**M03 (Consent Management)** and **M04 (Data Subject Request Management)** —
-`apps/api/src/modules/pdpl/` (`ibms-app`, landed 2026-09-04 and 2026-09-05 respectively,
-both under backlog Part D / Process #52). See `meta/context/consent-management.md` and
-`meta/context/data-subject-requests.md` for the detail. The other ten modules have no
-code yet — `ibms-app`'s Prisma schema models several of their entities already
-(`RetentionScheduleItem`, `DisposalBatch`, `LegalHold`, `CertificateOfDestruction` among
-them — see `meta/context/data-retention-and-disposal.md` for M06's), but nothing calls
-them.
+**All of Part D's nine backlog items now have real code** — `apps/api/src/modules/pdpl/`
+(`ibms-app`), all under backlog Part D §5.1 / Process #52, built across four sessions:
+**M03 (Consent Management)** and **M04 (Data Subject Request Management)** landed
+2026-09-04/05 — see `meta/context/consent-management.md` and
+`meta/context/data-subject-requests.md`. **M06 (Data Retention & Secure Disposal)**
+landed 2026-09-07 — see `meta/context/data-retention-and-disposal.md`. The remaining six
+items (Cross-Border Transfer, **M08** Third Parties & Data Sharing, **M10** DPIA
+Screening, Notices, Records of Processing Activities, and the DPO Workspace aggregate
+screen) landed the same day — see `meta/context/part-d-completion.md` for all six.
+**M01, M02, M05, M07 (beyond backlog #71's Vendor risk-tiering slice), M09 (built
+separately as Part C #55), M11, and M12 have no PDPL-module-specific code** — M09's own
+Incident/breach workflow already exists (`compliance-risk` module), just not filed under
+this PDPL umbrella; M07's Vendor/DataProcessingAgreement CRUD lives in
+`supporting-operations` (backlog #67/#71), same situation.
 
 Field-level schema for all 14 PCMS entities: `PRIV-SRS-02_Data_Dictionary_and_Entity_Model.xlsx`, sheets `PolicyDocument` through `User - Role`. Process flow, business rules, and service levels for each module: `PRIV-SRS-01_Privacy_Compliance_System_Requirements_Specification.docx` §5.1–5.12.
 
