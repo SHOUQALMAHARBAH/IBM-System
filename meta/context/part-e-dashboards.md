@@ -466,22 +466,22 @@ metric, a different and already-separate concept — see
 RE-RUN (not just re-read) to confirm this — the #47/#50/#68/DSR
 "verification is the deliverable" discipline.
 
-**The one real, small gap closed: `GET /employee-performance` gained a
-`branchId` filter** (via the employee's OPTIONAL linked `User.branchId`
-relation) — a genuine, low-risk, valuable addition (a Manager viewing
-their own branch's employee performance), additive only (no existing
-caller's call site changed). **`GET /insurer-performance` was
-DELIBERATELY left unchanged** — `InsurerPerformanceScore` is an inherently
-book-wide, per-insurer metric; segmenting it by branch/line would mean
-RECOMPUTING a fundamentally different score, not just filtering a read,
-out of proportion for this pass. No `insuranceLine`/`insurerId` filter on
-Employee Performance either — an employee isn't tied to a policy/insurer
-at all.
+**The one real, small backend gap closed: `GET /employee-performance`
+gained a `branchId` filter** (via the employee's OPTIONAL linked
+`User.branchId` relation) — a genuine, low-risk, valuable addition (a
+Manager viewing their own branch's employee performance), additive only
+(no existing caller's call site changed). **`GET /insurer-performance`'s
+own repository/endpoint was DELIBERATELY left unchanged** —
+`InsurerPerformanceScore` is an inherently book-wide, per-insurer metric;
+segmenting the SCORE ITSELF by branch/line would mean RECOMPUTING a
+fundamentally different metric, not just filtering a read, out of
+proportion for this pass. No `insuranceLine` filter anywhere on this
+dashboard — neither table has a line-of-business dimension at all.
 
 **A genuinely new, lightweight web page** (`/dashboards/insurer-employee-
-performance`) presents both scores book-wide for one period, side by side
-— the first Part E dashboard whose OWN new page is a pure aggregation of
-two ALREADY-EXISTING, ALREADY-TESTED single-lookup screens (`/insurer-
+performance`) presents both scores for one period, side by side — the
+first Part E dashboard whose OWN new page is a pure aggregation of two
+ALREADY-EXISTING, ALREADY-TESTED single-lookup screens (`/insurer-
 performance`, `/employee-performance`, both left untouched and still
 serving their own distinct "look up one specific insurer/employee's
 history" purpose). Deliberately shows raw `insurerId`/`employeeId`, not a
@@ -489,6 +489,21 @@ resolved name — matching the pre-existing, consistent convention on EVERY
 other insurer/employee-referencing screen in this app (none of them
 resolve a name from an id either); fixing that would be a genuine,
 separate, app-wide UX improvement, not something owed by this one item.
+
+**A follow-up audit (same backlog item, re-checked against the literal
+spec text) caught one real UI omission and closed it**: `GET
+/insurer-performance?insurerId=` already accepted an `insurerId` filter
+since #60's own original build — narrowing the LIST to one insurer's
+already-computed score is not a recompute, unlike scoping the score's own
+book-wide inputs by branch/line (the case correctly left alone above).
+The combined page's first cut omitted an "Insurer ID" filter field despite
+the underlying capability already existing end-to-end; it now has one,
+scoping only the insurer table (the employee table has no insurer
+dimension, so it correctly ignores this field) — reusing the existing
+client with no new endpoint. A Playwright test
+(`insurer-employee-performance-dashboard.spec.ts`) asserts the filled-in
+`insurerId` reaches ONLY the `/insurer-performance` request, never
+`/employee-performance`.
 
 ### Where the code lives (Insurer & Employee Performance Dashboard)
 
@@ -498,8 +513,9 @@ separate, app-wide UX improvement, not something owed by this one item.
   `employee-performance.service.ts`.
 - `apps/web/app/(app)/dashboards/insurer-employee-performance/page.tsx` —
   reuses the existing `lib/management-reporting/insurer-performance-api.ts`
-  / `employee-performance-api.ts` clients directly (widened with the new
-  `branchId` param on the latter); no new API client file.
+  (as-is — its own `insurerId` param already existed) /
+  `employee-performance-api.ts` (widened with the new `branchId` param)
+  clients directly; no new API client file.
 
 No migration, no new permission, no widening of `InsurerPerformanceScore`
 or its own repository/endpoint.
@@ -514,8 +530,9 @@ branch/insurer on cross-sell/up-sell; Policy: uniform across all four
 metrics; Claims: `asOf` replaces a period range, uniform branch/line/
 insurer; Financial: `insuranceLine`/`branchId` don't reach remittances;
 Compliance: NO period at all, `insuranceLine`/`insurerId` apply nowhere;
-Insurer & Employee Performance: `branchId` on employees only, no line/
-insurer anywhere). This dimension-by-dimension audit — not a blanket
+Insurer & Employee Performance: `insurerId` narrows the insurer table only
+(reusing #60's own pre-existing filter), `branchId` scopes the employee
+table only, `insuranceLine` applies to neither). This dimension-by-dimension audit — not a blanket
 checkbox — is itself the correct way to satisfy "every dashboard
 filterable by X/Y/Z/period": the rule describes an INTENT (make each
 dashboard as filterable as its own data genuinely supports), not a literal
