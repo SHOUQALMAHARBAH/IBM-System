@@ -1,9 +1,10 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-07 (item #3 — bidi text handling for mixed-content
-fields — built and verified, after item #1 — instant language switch — and
-item #2 — full RTL layout) · **Owner:** none named; cross-cutting, applies to
-every screen.
+**Last verified:** 2026-09-07 (item #4 — Arabic-first input — PARTIALLY built:
+correct Arabic sorting only, by explicit user scoping decision; keyboards and
+national-ID-convention name fields deferred — after item #3 — bidi text
+handling, item #2 — full RTL layout, and item #1 — instant language switch)
+· **Owner:** none named; cross-cutting, applies to every screen.
 
 ## What this is
 
@@ -21,7 +22,13 @@ single module:
    CONTENT-level bidi display of two whole, separate fields, not the
    mixed-content-in-one-field case this item actually names.
 4. Arabic-first input (Arabic keyboards, national-ID-convention name fields, correct
-   Arabic sorting) — not started.
+   Arabic sorting) — **PARTIALLY built, this entry: correct Arabic sorting only.**
+   Arabic keyboards and national-ID-convention name fields are explicitly deferred
+   as future work (see "What item #4 covers/does NOT cover" below) — a user
+   scoping decision, not an oversight: this bullet bundles three sub-problems of
+   very different size, and the other two (a real schema migration splitting every
+   name field into parts; ensuring no input validation regex blocks Arabic
+   characters) were deliberately not attempted in this pass.
 5. Locale-aware number/date/currency formatting (Gregorian + optional Hijri, JOD base +
    multi-currency for reinsurance) — not started.
 6. Full-text search across Arabic and English with fuzzy transliteration matching — not
@@ -219,10 +226,13 @@ files:
 - **Translation of the ~80 still-English screens** — unchanged from items
   #1-2; this item is about mixed-SCRIPT isolation within a field, not about
   which language the field's own label/surrounding prose is written in.
-- **Arabic-first input, keyboards, or sorting/collation** (item #4) — a
-  `dir="auto"` input still accepts whatever the OS keyboard sends; it does
-  not add an Arabic keyboard, a national-ID-convention name-field layout, or
-  Arabic collation anywhere.
+- **Arabic-first input or national-ID-convention name fields** (item #4,
+  still deferred as of that item's own partial build) — a `dir="auto"` input
+  still accepts whatever the OS keyboard sends; it does not add an Arabic
+  keyboard or a national-ID-convention name-field layout anywhere. (Arabic
+  sorting/collation itself WAS added later, in item #4's own partial build —
+  see "What item #4 covers" below; this bullet is intentionally narrower now
+  than when item #3 first wrote it.)
 - **Locale-aware number/date/currency formatting** (item #5) — untouched.
 - **System-generated bilingual documents** (item #7) — untouched; no
   document-generation infrastructure exists in this app yet regardless.
@@ -230,6 +240,67 @@ files:
   plausibly type bilingual/mixed content into (names, addresses, product/
   line labels, free-text descriptions, reference numbers shown adjacent to
   those). Pure numeric/enum/id fields were deliberately left untouched.
+
+## What item #4 covers (PARTIAL — a deliberate user scoping decision)
+
+Item #4's own bullet bundles three sub-problems of very different size.
+Presented with that ahead of implementation, the user explicitly chose:
+**fix Arabic sorting only; skip name-splitting; defer both name-splitting
+and Arabic keyboards as documented future work.**
+
+- **Correct Arabic sorting**: every `localeCompare(x, 'en')` call sorting a
+  genuinely bilingual name/label field switched to `localeCompare(x, 'ar')`
+  — `finance.config.ts` (customer legal name, insurer name ×2, insurance-line/
+  segment key), `loss-ratio.config.ts` (customer/insurer/insurance-line
+  label), `profitability-analysis.config.ts` (insurance-line/segment key).
+  Two DB-level sorts using plain Postgres collation
+  (`commission.repository.ts`'s `listInsurers()`,
+  `rfq.repository.ts`'s `findSelectableInsurers()`, both sorting
+  `Insurer.name`) were converted from Prisma `orderBy` to a fetch-then-JS-sort
+  with the same `'ar'` comparator — no DB-level ICU collation migration
+  needed, since both are small, unpaginated lookup lists.
+- **`'ar'` is HARDCODED, not the calling user's own language preference** — a
+  second explicit user scoping decision (asked directly, confirmed). A
+  future item could thread the actual caller's `languagePreference` through
+  instead; not attempted here.
+- **Deliberately NOT touched — two sites where the sorted value is a fixed,
+  always-English constant, not user content**: `sla-dashboard.config.ts`'s
+  `label` (a hardcoded SLA-workflow name — "DSR — Access / Deletion", etc. —
+  from `sla-registry.config.ts`, never Arabic) and
+  `role.repository.ts`'s `Role.name` (a `RoleName` enum —
+  `SALES_RELATIONSHIP_OFFICER`, etc.). Changing these would have been WRONG,
+  not a fix — confirmed by reading each field's actual source before
+  deciding, not assumed from the field name alone.
+- A genuine, empirically-verified test proves the mechanism: `"إبراهيم
+  للتأمين"` sorts BEFORE `"أحمد للتجارة"` under `'ar'` collation but AFTER it
+  under `'en'` (verified directly against Node's ICU, not assumed) — a real
+  divergence, not an artificial fixture, locked in as a regression test in
+  `finance.config.spec.ts`.
+
+## What item #4 does NOT cover (read before assuming otherwise — explicitly deferred future work)
+
+- **Arabic keyboards** — out of scope by user decision. Only partially
+  investigated: confirmed no DTO validation regex was checked for
+  Latin-only patterns that might reject Arabic characters on a name field —
+  this specific check (the one keyboard-adjacent risk cheap enough to fold
+  in) was flagged during scoping but NOT actually done in this pass. A
+  future session should grep every name/address DTO for a `@Matches`
+  pattern before assuming Arabic input is unblocked everywhere.
+- **National-ID-convention name fields** — out of scope by user decision.
+  Every name field in the schema (`Customer.legalName`, `Prospect.
+  companyName`, `Employee.fullName`, `Adjuster.name`, etc.) remains a single
+  flat string; none are split into the Jordanian convention (given name +
+  father's name + grandfather's name + family name). As written, the
+  backlog bullet reads as a real schema migration (a new set of structured
+  columns) touching every form and consumer of these fields — a
+  substantially larger, more invasive change than the sorting fix, and
+  genuinely undocumented anywhere in this brain beyond the one-line bullet
+  (no field list, no definition of the convention, no design doc). Future
+  work: define the convention's exact field breakdown with the user first,
+  then scope the migration.
+- **Caller-aware locale** — `'ar'` is hardcoded everywhere per this item's
+  own scoping decision (see above); no code reads `languagePreference` to
+  pick a sort locale dynamically.
 
 ## Where the code lives
 
@@ -305,6 +376,30 @@ files:
   match against either value alone would fail if a single shared wrapper
   held both); a mixed-content capture input (`vendors` create form) carries
   `dir="auto"`.
+
+**Item #4 (partial)** — api-only, no web files, no migration, no new permission:
+
+- `apps/api/src/modules/finance/finance.config.ts` — 4 `localeCompare`
+  tie-breakers (customer legal name, insurer name ×2, insurance-line/segment
+  key) switched `'en'` → `'ar'`; the `buildReceivablesAgeing` docstring
+  updated to match.
+- `apps/api/src/modules/loss-ratio/loss-ratio.config.ts` — the
+  customer/insurer/insurance-line label tie-breaker switched to `'ar'`.
+- `apps/api/src/modules/management-reporting/profitability-analysis.config.ts`
+  — the insurance-line/segment key tie-breaker switched to `'ar'`.
+- `apps/api/src/repositories/commission.repository.ts` /
+  `apps/api/src/repositories/rfq.repository.ts` — `listInsurers()`/
+  `findSelectableInsurers()` converted from a Prisma `orderBy` (plain
+  Postgres collation) to a fetch-then-JS-sort with the same `'ar'`
+  comparator.
+- Deliberately UNCHANGED: `apps/api/src/modules/sla-dashboard/
+  sla-dashboard.config.ts` (a fixed, always-English workflow-name label) and
+  `apps/api/src/repositories/role.repository.ts` (`Role.name`, a fixed
+  enum) — both confirmed by reading the actual field source, not assumed.
+- `apps/api/src/modules/finance/finance.config.spec.ts` — new test proving
+  the mechanism empirically: `"إبراهيم للتأمين"` sorts before `"أحمد
+  للتجارة"` under `'ar'` but after it under `'en'` (verified directly
+  against Node's ICU before writing the assertion, not assumed).
 
 ## A real regression caught while verifying item #1
 
@@ -385,11 +480,33 @@ item #2's own Claims-consent-widget fix hit once already ("a leftover
 port-3000 server from before my edit") — worth checking `.next/`'s build
 recency, not just the source diff, before trusting an e2e failure.
 
+## Verification — item #4 (partial)
+
+Pure api change (no web files touched, confirmed via `git diff --stat`) — no
+Playwright/a11y gate applies. +1 new unit test (`finance.config.spec.ts`,
+proving `'ar'` vs `'en'` collation genuinely diverges for a real Arabic name
+pair) → api unit **2321/2321** (from 2320). Targeted + adjacent e2e green:
+`commission` (1/1), plus a broader sweep of every e2e file touching a
+changed config module — `claim` (10/10, exercises loss-ratio recompute),
+`financial-dashboard` (5/5), `sla-dashboard` (1/1, confirms the
+DELIBERATELY-unchanged workflow-label sort still passes), `claims-dashboard`
+(5/5), `profitability-analysis` (3/3) — 24/24 total. No existing test
+asserted an exact insurer/name ordering that the locale switch could have
+broken (confirmed by reading each assertion before relying on a green run,
+not just trusting the exit code) — the one existing tie-break test in
+`finance.config.spec.ts` uses ASCII-only fixture names, unaffected either
+way. `npm run typecheck`/`lint`/`test` (api) OK.
+
 ## Next
 
-Item #3 is complete. Wait for the user's explicit go-ahead before starting item #4
-(Arabic-first input: keyboards, national-ID-convention name fields, correct Arabic
-sorting) or any other Part F item — do not self-select. Items #4-7 each look like
-their own multi-session effort (item #7 in particular has no document-generation
-infrastructure to build on at all yet); item #8 (the 4-state screenshot discipline)
-is a verification overlay on whichever of #4-7 land, not a standalone build.
+Item #4 is PARTIALLY complete — Arabic sorting only, by explicit user
+scoping decision; Arabic keyboards and national-ID-convention name fields
+remain open, documented future work (see "What item #4 does NOT cover"
+above) — do not assume a future session can mark item #4 fully closed
+without addressing those two. Wait for the user's explicit go-ahead before
+resuming item #4's remaining scope, starting item #5 (locale-aware number/
+date/currency formatting), or any other Part F item — do not self-select.
+Items #5-7 each look like their own multi-session effort (item #7 in
+particular has no document-generation infrastructure to build on at all
+yet); item #8 (the 4-state screenshot discipline) is a verification overlay
+on whichever of #5-7 land, not a standalone build.
