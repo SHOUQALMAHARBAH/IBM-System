@@ -1,6 +1,6 @@
 # Part E — Dashboards & Management Reporting (Part 13)
 
-**Last verified:** 2026-09-07 (Compliance Dashboard added) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
+**Last verified:** 2026-09-07 (Insurer & Employee Performance Dashboard verified + gap closed — Part E COMPLETE) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
 
 ## What this is
 
@@ -436,11 +436,112 @@ No migration, no new permission, no widening of any existing repository —
 unlike Financial Dashboard, every table this dashboard reads already
 supported everything it needed.
 
-## Out of scope for this file
+## Insurer & Employee Performance Dashboard
 
-The Insurer & Employee Performance verification — a separate pass, to be
-added to this same file when it lands (the `data-retention-and-disposal.md`
-"grow one file per completed sub-system" shape, since all six are one
-backlog item, Process #64). The `dashboard.executive.view` cross-department
-rollup screen itself — not yet built. `#59`'s own `SalesTarget`
-quota-tracking design — `ibms-brain/meta/context/sales-performance.md`.
+Bullet text: "insurer performance score across 4 axes, employee KPI
+achievement." The sixth and final named dashboard.
+
+**A genuinely different outcome shape from every prior dashboard: neither a
+fresh build, nor Financial Dashboard's "close one real gap," but a
+"verify, then close one small, real gap" pass.** Part E's OWN permission
+inventory (this file's own header, and `kpi-dashboard.md` before it)
+already names `insurer-performance.view` + `employee-performance.view` —
+NOT a new `dashboard.*.view` code — as this 6th dashboard's own permission
+pair. Unlike the other five, which each got a DEDICATED new permission
+code (signalling "build something new"), the 6th dashboard's own grant
+being the SAME codes #60/#61 already use is itself the signal that these
+two already-built processes together constitute the dashboard.
+
+**"Insurer performance score across 4 axes" is a literal, exact match**:
+`InsurerPerformanceScore` has EXACTLY four score columns
+(`quoteResponseScore`/`claimsServiceScore`/`priceScore`/
+`serviceQualityScore`) — confirmed by reading the schema directly, not
+assumed from the process name. **"Employee KPI achievement" reads as #61's
+own `EmployeePerformanceRecord`** (`newClients`/`premiumWritten`/
+`commissionEarned`/`renewalRatePercent`/`crossSellRatePercent`) — a
+broader "employee KPI scorecard," not #59's own narrower `SalesTarget`
+achievement-percentage mechanism (which is Sales-Officer-specific, one
+metric, a different and already-separate concept — see
+`sales-performance.md`). Both #60 and #61's full existing test suites were
+RE-RUN (not just re-read) to confirm this — the #47/#50/#68/DSR
+"verification is the deliverable" discipline.
+
+**The one real, small gap closed: `GET /employee-performance` gained a
+`branchId` filter** (via the employee's OPTIONAL linked `User.branchId`
+relation) — a genuine, low-risk, valuable addition (a Manager viewing
+their own branch's employee performance), additive only (no existing
+caller's call site changed). **`GET /insurer-performance` was
+DELIBERATELY left unchanged** — `InsurerPerformanceScore` is an inherently
+book-wide, per-insurer metric; segmenting it by branch/line would mean
+RECOMPUTING a fundamentally different score, not just filtering a read,
+out of proportion for this pass. No `insuranceLine`/`insurerId` filter on
+Employee Performance either — an employee isn't tied to a policy/insurer
+at all.
+
+**A genuinely new, lightweight web page** (`/dashboards/insurer-employee-
+performance`) presents both scores book-wide for one period, side by side
+— the first Part E dashboard whose OWN new page is a pure aggregation of
+two ALREADY-EXISTING, ALREADY-TESTED single-lookup screens (`/insurer-
+performance`, `/employee-performance`, both left untouched and still
+serving their own distinct "look up one specific insurer/employee's
+history" purpose). Deliberately shows raw `insurerId`/`employeeId`, not a
+resolved name — matching the pre-existing, consistent convention on EVERY
+other insurer/employee-referencing screen in this app (none of them
+resolve a name from an id either); fixing that would be a genuine,
+separate, app-wide UX improvement, not something owed by this one item.
+
+### Where the code lives (Insurer & Employee Performance Dashboard)
+
+- Widened: `repositories/employee-performance.repository.ts`
+  (`EmployeePerformanceRecordFilter.branchId`),
+  `modules/management-reporting/dto/list-employee-performance-query.dto.ts`,
+  `employee-performance.service.ts`.
+- `apps/web/app/(app)/dashboards/insurer-employee-performance/page.tsx` —
+  reuses the existing `lib/management-reporting/insurer-performance-api.ts`
+  / `employee-performance-api.ts` clients directly (widened with the new
+  `branchId` param on the latter); no new API client file.
+
+No migration, no new permission, no widening of `InsurerPerformanceScore`
+or its own repository/endpoint.
+
+## The cross-cutting closing bullet ("filterable by branch/line/insurer/period, renderable in either language")
+
+**The filter half is satisfied — honestly, per-dashboard, not uniformly.**
+Every one of Part E's six dashboards has been checked against every one of
+these four dimensions individually, and each dashboard's own section above
+documents exactly which apply and which genuinely don't (Sales: no
+branch/insurer on cross-sell/up-sell; Policy: uniform across all four
+metrics; Claims: `asOf` replaces a period range, uniform branch/line/
+insurer; Financial: `insuranceLine`/`branchId` don't reach remittances;
+Compliance: NO period at all, `insuranceLine`/`insurerId` apply nowhere;
+Insurer & Employee Performance: `branchId` on employees only, no line/
+insurer anywhere). This dimension-by-dimension audit — not a blanket
+checkbox — is itself the correct way to satisfy "every dashboard
+filterable by X/Y/Z/period": the rule describes an INTENT (make each
+dashboard as filterable as its own data genuinely supports), not a literal
+requirement that all four params exist as no-op query strings on every
+route.
+
+**The bilingual half is NOT satisfied anywhere — a real, unavoidable,
+Part F-scoped gap, not something this session's Part E work could close.**
+"Renderable in either language" is Part F's own multi-bullet scope
+(`ibms-app/README.md` § Part F): instant language switch, full RTL
+layout, bidi text handling, Arabic-first input, locale-aware formatting,
+bilingual document generation, and a 4-state (loading/empty/error/
+populated) screenshot requirement per screen. NONE of it exists anywhere
+in this app yet — every screen built across every Part, not just Part E's
+six dashboards, is English-only/LTR. Closing it would mean building an
+entire i18n/RTL framework from scratch, an effort on the scale of its own
+Part, not a Part E dashboard's own deliverable. Documented here explicitly
+so it reads as a KNOWN, ACKNOWLEDGED gap rather than a silently-dropped
+requirement.
+
+## Part E is now COMPLETE (all six named dashboards + the cross-cutting filter audit)
+
+Sales, Policy, Claims, Financial, Compliance (five fresh builds) and
+Insurer & Employee Performance (a verify + one small gap-closing pass) —
+all six. `dashboard.executive.view` (#64's own top-level permission, for a
+future cross-department rollup screen) remains unbuilt — it was never one
+of the six NAMED dashboards, and no backlog bullet describes what it
+should show beyond its own existence in the permission grid. The
+bilingual half of the cross-cutting rule remains open, owned by Part F.
