@@ -1,12 +1,14 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-07 (item #4 — Arabic-first input — CLOSED: Arabic
-keyboards confirmed clear + Jordanian national-ID-convention name-splitting
-built for Customer/Employee/UltimateBeneficialOwner; `InsuredPerson`
-deliberately excluded, it has zero CRUD anywhere yet — after item #5 —
-locale-aware number/date formatting (partial), item #3 — bidi text
-handling, item #2 — full RTL layout, and item #1 — instant language
-switch) · **Owner:** none named; cross-cutting, applies to every screen.
+**Last verified:** 2026-09-08 (item #6 — bilingual full-text search —
+PARTIALLY built: full-text search only (Arabic + English), on `Customer`/
+`Prospect`/`Vendor`; fuzzy transliteration matching and same-script typo
+tolerance both explicitly deferred, `Insurer` excluded — no dedicated
+module/list page exists for it — after item #4 — Arabic-first input
+(closed, one narrow exception), item #5 — locale-aware number/date
+formatting (partial), item #3 — bidi text handling, item #2 — full RTL
+layout, and item #1 — instant language switch) · **Owner:** none named;
+cross-cutting, applies to every screen.
 
 ## What this is
 
@@ -41,8 +43,17 @@ single module:
    below) — a user scoping decision: this bullet bundles three sub-problems of very
    different size ("optional" per the bullet's own wording for Hijri), and the user
    confirmed fixing only number/date formatting for now.
-6. Full-text search across Arabic and English with fuzzy transliteration matching — not
-   started.
+6. Full-text search across Arabic and English with fuzzy transliteration matching —
+   **PARTIALLY built, this entry: full-text search only, on `Customer`/`Prospect`/
+   `Vendor`.** Fuzzy transliteration matching (typing "Ahmad" in Latin script finding
+   a record stored as "أحمد" in Arabic, or vice versa) and same-script typo tolerance
+   (`pg_trgm`) are both explicitly deferred as future work (see "What item #6 covers/
+   does NOT cover" below) — a user scoping decision: this bullet bundles two
+   sub-problems of very different size, and the user confirmed fixing only real
+   full-text search for now. `Insurer` was excluded from the entity scope — it has no
+   dedicated module or web list page anywhere in this app (only narrow lookups inside
+   RFQ/commission), so adding search to it would mean building its first browse
+   screen from scratch.
 7. System-generated bilingual documents (quotation comparison, recommendation report,
    policy schedule, invoices, certificates, complaint acknowledgements) — not started;
    no document-generation infrastructure (PDF or otherwise) exists anywhere in this app
@@ -52,8 +63,8 @@ single module:
    verification DISCIPLINE overlay on 1-7, not a separate build item.
 
 Worked one item at a time, the Part D/E pacing convention — this file now covers
-items #1-5 (item #4 CLOSED with one narrow, documented exception; item #5
-PARTIAL, by explicit user scoping decision). Items #6-8 are unbuilt; do not
+items #1-6 (item #4 CLOSED with one narrow, documented exception; items #5 and #6
+PARTIAL, by explicit user scoping decision). Items #7-8 are unbuilt; do not
 assume they are covered by any earlier item's own infrastructure without
 checking each item's own "does NOT cover" section below.
 
@@ -431,6 +442,101 @@ deferred future work.**
   item's entire diff is `apps/web/**` (plus its own new `e2e`/`lib` test
   files).
 
+## What item #6 covers (PARTIAL — a deliberate user scoping decision)
+
+Item #6's own bullet bundles two sub-problems of very different size.
+Presented with that ahead of implementation, the user explicitly chose:
+**fix real full-text search now; defer fuzzy transliteration matching AND
+same-script typo tolerance as future work.**
+
+- **Entity scope, also confirmed with the user**: `Customer`, `Prospect`,
+  `Vendor` — the only 3 entities with BOTH a genuinely bilingual name field
+  AND an existing list endpoint + web list page. `Insurer` was considered
+  and explicitly EXCLUDED after a follow-up finding, not an oversight: it
+  has no dedicated module anywhere (no `insurer.controller.ts`/`.service.ts`
+  — only narrow lookups embedded inside RFQ's/commission's own pickers) and
+  no `/insurers` web list page at all (only `insurer-accounting`/
+  `insurer-performance`, which are per-insurer REPORTS, not a browse
+  screen) — the same class of gap item #4 hit with `InsuredPerson`.
+- **Mechanism — empirically verified against the actual running Postgres
+  (18-alpine), not assumed**: this install ships a real built-in `'arabic'`
+  text-search configuration (genuine stemming — verified
+  `to_tsvector('arabic', 'شركة الأفق للتأمين')` → `'افق':2 'تام':3
+  'شرك':1`, definite articles/prefixes stripped) alongside `'english'`.
+  Bilingual documents are built by CONCATENATING both configs' tsvectors —
+  `to_tsvector('arabic', text) || to_tsvector('english', text)` — verified
+  each config tokenizes text from the OTHER script without erroring
+  (passes it through largely unstemmed rather than dropping it), so the
+  combined vector matches BOTH a real Arabic stem and an English word from
+  the same field. The query side uses `websearch_to_tsquery` (never raw
+  `to_tsquery`) against both configs, OR'd — verified empty/punctuation-only
+  input degrades to an empty tsquery (a harmless NOTICE, no crash), and an
+  injection-shaped test string (`"Ahmad' OR 1=1; --"`) is parsed entirely
+  within tsquery's own mini-language when passed through Prisma's
+  PARAMETERIZED tagged-template `$queryRaw` — never `$queryRawUnsafe`, never
+  string concatenation — confirmed not a real SQL-injection vector this way.
+- **One new `GENERATED ALWAYS ... STORED` tsvector column + GIN index per
+  model**, computed by Postgres itself (never written to by the app):
+  `Customer.searchVector` from `legalName` ONLY —
+  `contactPhoneEnc`/`contactEmailEnc` are Highly Confidential -- ENCRYPT
+  fields and must never be indexed in plaintext
+  (`sensitive-data-handling.md`); `Prospect.searchVector` from
+  `companyName` + `contactPerson`; `Vendor.searchVector` from `name`. No
+  backfill needed — the generated column computes for every existing row
+  the moment it's added.
+- **The raw query resolves ids only, never duplicates filter logic**: each
+  repository's new `searchIds(term)` returns matching ids via `$queryRaw`;
+  the SAME existing Prisma `findMany()` then filters by `id: { in: ids }`
+  alongside its existing filters (`ownerUserId`/`status`,
+  `salesOwnerUserId`, `vendorType`) — avoids re-implementing any filter in
+  raw SQL, the raw query's only job is turning free text into ids.
+- **An empty search box means "show everything," not "search for an empty
+  string"** — verified empirically that an empty-string tsquery matches
+  NOTHING (not everything), so `emptyStringToUndefined` on the DTO's
+  `search` field (the same transform this codebase already uses for every
+  other optional filter) is load-bearing here, not cosmetic: it turns an
+  empty search box into "no filter" before the query ever runs.
+- **Two tests per entity prove REAL stemming, not substring luck**: an
+  English term that is a Porter-stem of a stored word but never a literal
+  substring of it (searching `"trade"` finds a stored `"...Trading Co."`),
+  and an Arabic SINGULAR search term that matches a stored PLURAL form via
+  a shared stem (searching `"سيارة"` finds a stored `"...للسيارات..."`) —
+  both verified directly against this Postgres build before writing the
+  assertions, not assumed.
+- **This is the first real use of `$queryRaw` with user input anywhere in
+  this codebase** — the one pre-existing use (`app.controller.ts`'s health
+  check) is a literal `SELECT 1`.
+
+## What item #6 does NOT cover (read before assuming otherwise — explicitly deferred future work)
+
+- **Fuzzy transliteration matching** — out of scope by user decision.
+  Typing "Ahmad" in Latin script does NOT find a record stored as "أحمد"
+  in Arabic, or vice versa. No Postgres extension or common library does
+  this well; it would need a maintained transliteration mapping (e.g.
+  Buckwalter-style) plus fuzzy comparison — nothing to build on, unlike
+  full-text search's own real built-in `'arabic'` config.
+- **Same-script typo tolerance** — also out of scope by user decision,
+  deferred alongside transliteration rather than built separately.
+  `pg_trgm`/`unaccent`/`fuzzystrmatch` are available on this Postgres
+  install (confirmed via `pg_available_extensions`) but NOT installed — a
+  small misspelling within the same script (e.g. a typo in an English or
+  Arabic name) will not match today.
+- **`Insurer` search** — out of scope; no dedicated module or web list
+  page exists for it at all (see "What item #6 covers" above). Building
+  search for it now would mean building its first-ever browse screen from
+  scratch, not adding search to an existing one.
+- **Search on any field beyond the ones named above** — `Customer`'s
+  encrypted contact fields, `Prospect`'s `sector`/`activity`/`location`,
+  `Vendor`'s `vendorType`, and every OTHER entity in this app (Policy,
+  Claim, Employee, etc.) have no search capability added by this item.
+- **Search-as-you-type** — the web search input is submit-triggered (Enter
+  key or a "Search" button), not instant/debounced-as-you-type. This app
+  has no debounce utility anywhere; introducing one for a first pass was
+  judged disproportionate.
+- **A relevance-ranked or highlighted result** — `ts_rank`/`ts_headline`
+  were not added; results are returned in each entity's own existing sort
+  order (`createdAt desc`), a plain filter, not a ranked search experience.
+
 ## Where the code lives
 
 - `packages/db/prisma/schema.prisma` — `User.languagePreference` (line ~149) and the
@@ -658,6 +764,66 @@ permission:
   locale-tag choice holds in a real rendered page, not just in the unit
   test's isolated function calls.
 
+**Item #6 (partial)** — schema migration + api + web, no new permission:
+
+- `packages/db/prisma/schema.prisma` — one new
+  `searchVector Unsupported("tsvector")?` field on `Customer`, `Prospect`,
+  `Vendor` (Prisma's documented mechanism for a DB column type it can't
+  model in its own query API — the column exists and is queryable via
+  `$queryRaw`, excluded from the generated Client's normal type-safe
+  methods, which is correct since nothing should ever WRITE to it —
+  Postgres computes it).
+  `packages/db/prisma/migrations/20260918120000_add_search_vectors/
+  migration.sql` — new, hand-authored (same pre-existing, unrelated
+  checksum-drift workaround as item #4's own migration).
+- `apps/api/src/repositories/customer.repository.ts` /
+  `prospect.repository.ts` / `vendor.repository.ts` — each gained a
+  `searchIds(term): Promise<string[]>` method (the first real use of
+  `$queryRaw` with user input anywhere in this codebase) and an optional
+  `id?: string[]` field on its own `Filter` interface, applied as
+  `id: filter.id ? { in: filter.id } : undefined` in `findMany()` — the
+  same `undefined`-means-"don't filter" pattern every other field in
+  these interfaces already uses.
+- `apps/api/src/modules/customer/dto/list-customers-query.dto.ts` /
+  `apps/api/src/modules/prospect/dto/list-prospects-query.dto.ts` /
+  `apps/api/src/modules/supporting-operations/dto/list-vendors-query.dto.ts`
+  — each gained an optional `search` field
+  (`@Transform(emptyStringToUndefined)`, the load-bearing behavior
+  documented above).
+- `apps/api/src/modules/customer/customer.service.ts` /
+  `apps/api/src/modules/prospect/prospect.service.ts` /
+  `apps/api/src/modules/supporting-operations/vendor.service.ts` — each
+  `list()` calls `searchIds()` when `query.search` is present, then passes
+  the resulting ids into the existing `findMany()` filter object
+  unchanged otherwise (`ProspectService.list()`/`VendorService.list()`
+  became `async`; `CustomerService.list()` already was).
+- `apps/web/lib/customer/customer-api.ts` / `prospect-api.ts` /
+  `supporting-operations/vendor-api.ts` — each gained a `search` field/
+  parameter and querystring wiring (`listVendors()` gained a second
+  positional `search?: string` parameter rather than an options object,
+  matching its own existing single-positional-parameter shape).
+- `apps/web/app/(app)/customers/page.tsx` / `prospects/page.tsx` /
+  `vendors/page.tsx` — none of these 3 pages had ANY existing filter UI
+  before this item (confirmed by reading each — every one called its
+  `list*()` function with no arguments on mount). Each gained one
+  `<input dir="auto">` + `<form onSubmit>` (submit-triggered, not
+  search-as-you-type — see "What item #6 does NOT cover" above) and an
+  empty-state message that distinguishes "no results for your search"
+  from "none exist yet."
+- `apps/api/test/customer.e2e-spec.ts` / `prospect.e2e-spec.ts` /
+  `vendor.e2e-spec.ts` — 4 new tests each (English stemming proof, Arabic
+  stemming proof, empty-search-shows-everything proof, nonsense-term-
+  matches-nothing proof) — 12 new tests total, all against the real
+  `db-test` Postgres (no repository in this codebase has a unit-test
+  precedent that mocks Prisma raw SQL, and faking tsvector behavior would
+  prove nothing).
+- `apps/web/e2e/customers.spec.ts` / `prospects.spec.ts` / `vendors.spec.ts`
+  — one new Playwright test each, proving the WIRING (search input →
+  correct querystring → re-rendered filtered list) against a mocked api,
+  not re-testing real Postgres FTS itself (that is the api e2e tests' own
+  job) — the same web-proves-wiring/api-proves-behavior split this
+  session has used throughout Part F.
+
 ## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
@@ -811,19 +977,45 @@ all green, no flakes this run). `npm run typecheck`/`lint`/`build`/`test`
 and the choice itself was confirmed with the user directly via
 `AskUserQuestion` rather than assumed.
 
+## Verification — item #6 (partial)
+
+Touches `packages/db` (1 migration), `apps/api`, and `apps/web` — the
+second Part F item since #1 to touch all three (item #4 was the first),
+confirmed via `git diff --stat`. No new unit tests (this needs a real
+Postgres to exercise `$queryRaw`/tsvector — no repository in this codebase
+mocks Prisma raw SQL, so a unit test would prove nothing) — api unit stays
+**2326/2326** (unchanged). +12 new api e2e tests (4 per entity ×
+`Customer`/`Prospect`/`Vendor`: English-stemming proof, Arabic-stemming
+proof, empty-search-shows-everything proof, nonsense-term-matches-nothing
+proof) — targeted `customer`/`prospect`/`vendor` e2e: **43/43**. Full
+62-file api e2e suite: **305/305** (from 293). Web: +3 new Playwright
+tests (one per entity, proving the search-input-to-querystring wiring
+against a mocked api) — full web suite **297/297** (from 294, split 231
+non-`@a11y` + 66 `@a11y`, no flakes this run). `npm run
+typecheck`/`lint`/`build`/`test` (api + web) OK. Migration applied to both
+`db` and `db-test` via the established hand-authored-migration-plus-
+`migrate resolve` workaround; smoke-tested directly against real existing
+rows in `db` (`SELECT legalName, searchVector FROM "Customer"`) before
+trusting the e2e suite, confirming the generated column populated
+correctly on data that predates this migration, not just on new inserts.
+
 ## Next
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
 `InsuredPerson` name-splitting, deferred until that model gets real CRUD
 (see "What item #4 does NOT cover" above) — this is a pre-existing gap this
-item did not create and is not blocking on. Item #5 remains PARTIALLY
-complete — number/date formatting only; Hijri calendar and multi-currency
-(reinsurance) remain open, documented future work (see "What item #5 does
-NOT cover" above). Do not assume a future session can mark item #5 fully
-closed without addressing its own deferred scope. Wait for the user's
-explicit go-ahead before resuming item #5's remaining scope, starting item
-#6 (bilingual full-text search), or any other Part F item — do not
-self-select. Items #6-7 each look like their own multi-session effort (item
-#7 in particular has no document-generation infrastructure to build on at
-all yet); item #8 (the 4-state screenshot discipline) is a verification
-overlay on whichever of #6-7 land, not a standalone build.
+item did not create and is not blocking on. **Item #6 is now also PARTIALLY
+built** — full-text search only, on `Customer`/`Prospect`/`Vendor`; fuzzy
+transliteration matching, same-script typo tolerance, and `Insurer` search
+all remain open, documented future work (see "What item #6 does NOT cover"
+above). Item #5 remains PARTIALLY complete — number/date formatting only;
+Hijri calendar and multi-currency (reinsurance) remain open, documented
+future work (see "What item #5 does NOT cover" above). Do not assume a
+future session can mark item #5 or item #6 fully closed without addressing
+its own deferred scope. Wait for the user's explicit go-ahead before
+resuming item #5's or item #6's remaining scope, starting item #7 (system-
+generated bilingual documents), or any other Part F item — do not
+self-select. Item #7 in particular has no document-generation
+infrastructure to build on at all yet, so it looks like its own
+multi-session effort; item #8 (the 4-state screenshot discipline) is a
+verification overlay on whichever of #5-7 land, not a standalone build.
