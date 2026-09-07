@@ -1,10 +1,12 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-07 (item #4 — Arabic-first input — PARTIALLY built:
-correct Arabic sorting only, by explicit user scoping decision; keyboards and
-national-ID-convention name fields deferred — after item #3 — bidi text
-handling, item #2 — full RTL layout, and item #1 — instant language switch)
-· **Owner:** none named; cross-cutting, applies to every screen.
+**Last verified:** 2026-09-07 (item #5 — locale-aware number/date formatting —
+PARTIALLY built: number/date formatting only (sub-problem #1 of 3), by
+explicit user scoping decision; Hijri calendar and multi-currency
+(reinsurance) deferred — after item #4 — Arabic-first input (partial), item
+#3 — bidi text handling, item #2 — full RTL layout, and item #1 — instant
+language switch) · **Owner:** none named; cross-cutting, applies to every
+screen.
 
 ## What this is
 
@@ -30,7 +32,12 @@ single module:
    name field into parts; ensuring no input validation regex blocks Arabic
    characters) were deliberately not attempted in this pass.
 5. Locale-aware number/date/currency formatting (Gregorian + optional Hijri, JOD base +
-   multi-currency for reinsurance) — not started.
+   multi-currency for reinsurance) — **PARTIALLY built, this entry: number/date
+   formatting only.** Hijri calendar and multi-currency (reinsurance) support are
+   explicitly deferred as future work (see "What item #5 covers/does NOT cover"
+   below) — a user scoping decision: this bullet bundles three sub-problems of very
+   different size ("optional" per the bullet's own wording for Hijri), and the user
+   confirmed fixing only number/date formatting for now.
 6. Full-text search across Arabic and English with fuzzy transliteration matching — not
    started.
 7. System-generated bilingual documents (quotation comparison, recommendation report,
@@ -42,9 +49,9 @@ single module:
    verification DISCIPLINE overlay on 1-7, not a separate build item.
 
 Worked one item at a time, the Part D/E pacing convention — this file now covers
-items #1-3. Items #4-8 are unbuilt; do not assume they are covered by item #1, #2,
-or #3's own infrastructure without checking each item's own "does NOT cover" section
-below.
+items #1-5 (items #4-5 each PARTIAL, by explicit user scoping decisions). Items
+#6-8 are unbuilt; do not assume they are covered by any earlier item's own
+infrastructure without checking each item's own "does NOT cover" section below.
 
 ## What item #1 covers
 
@@ -302,6 +309,82 @@ and Arabic keyboards as documented future work.**
   own scoping decision (see above); no code reads `languagePreference` to
   pick a sort locale dynamically.
 
+## What item #5 covers (PARTIAL — a deliberate user scoping decision)
+
+Item #5's own bullet bundles three sub-problems: number/date formatting,
+Hijri calendar support ("optional" per the bullet's own wording), and
+multi-currency for reinsurance. Presented with that breakdown ahead of
+implementation, the user explicitly chose: **fix #1 (locale-aware
+number/date formatting) now; Hijri calendar and multi-currency remain
+deferred future work.**
+
+- **One shared formatting utility, `apps/web/lib/i18n/format.ts`**
+  (`formatMoney`/`formatDate`/`formatDateTime`), replacing ~9 duplicated
+  local `money()`/`fmtMoney()`/`fmtDateTime()` implementations across
+  `apps/web/components/**` and `apps/web/app/(app)/**/page.tsx` — the same
+  "fix the shared primitive once" precedent items #2/#3 already established
+  (`app.styles.ts`, `ProfileField`). Every duplicate's exact null/non-finite
+  fallback behavior (an em dash for `null`, the raw value with a currency
+  prefix for a non-numeric string) was preserved byte-for-byte — a
+  behavior-preserving consolidation, not a new contract.
+- **Driven by the SAME live `useLanguage()` context item #1 already ships**
+  — every call site threads the current `language` (`'AR'`/`'EN'`) through,
+  either via the hook directly (inside a component) or as an explicit
+  `language: Language` parameter threaded into a plain helper function that
+  cannot call a hook itself (e.g. `coverageLabel(c, language)` in
+  `ClaimSection.tsx`, `oldest(daysOverdue, dueDate, language)` in
+  `client-accounting`/`insurer-accounting`).
+- **Locale tags were empirically verified against Node's own ICU before
+  being chosen, not assumed** — the specific risk: an Arabic REGION tag
+  (`'ar-JO'`) silently switches to Eastern Arabic-Indic numerals
+  (`١٬٢٣٤٫٥٠٠` instead of `1,234.500`), which nothing in this codebase or
+  brain ever asked for and would be a confusing surprise for JOD amounts.
+  Bare `'ar'` (no region) keeps Western Arabic numerals while still
+  formatting the DATE in genuine Arabic-locale order (`D/M/YYYY`, no
+  leading zeros, with invisible RTL direction marks between components) —
+  confirmed via `node -e` scripts calling `toLocaleDateString`/
+  `toLocaleString` directly, the same "prove it against real ICU, don't
+  assume" discipline item #4's sorting fix used. English uses `'en-GB'`
+  (`DD/MM/YYYY`), matching the existing backend precedent in
+  `audit-anomaly-detection.service.ts` — not bare `'en'`, which would read
+  as US-style `MM/DD/YYYY`.
+- **User confirmed the locale-tag choice directly** — presented with the
+  empirical divergence above via `AskUserQuestion`, the user selected
+  `'ar'` + `'en-GB'` over the alternative of a region-qualified Arabic tag.
+- **Full mechanical sweep, not a sample** — every `.toLocaleString()`/
+  `.toLocaleDateString()`/`.toLocaleString()`-as-datetime call site and
+  every duplicated `money()`-shaped helper across `apps/web` was converted;
+  confirmed via a whole-codebase grep showing zero remaining
+  `toLocaleString`/`toLocaleDateString` calls and zero remaining local
+  `money`/`fmtMoney`/`fmtDateTime` function definitions anywhere in
+  `apps/web` afterward — the same "grep to confirm zero remaining" bar
+  items #2/#3 held themselves to.
+
+## What item #5 does NOT cover (read before assuming otherwise — explicitly deferred future work)
+
+- **Hijri calendar** — out of scope by user decision; every date renders
+  Gregorian regardless of language, even though the backlog bullet marks
+  Hijri as merely "optional" (not mandatory) rather than unstated.
+- **Multi-currency for reinsurance** — out of scope by user decision.
+  `formatMoney()` takes a `currency` parameter (defaulting to `'JOD'`) and
+  every call site already passes the record's own actual currency where one
+  exists, but nothing in this pass added multi-currency SUPPORT beyond what
+  already existed (e.g. no currency-conversion, no reinsurance-specific
+  formatting rule) — it is the same single-currency-per-record display this
+  codebase always had, just locale-aware now.
+- **Caller-aware locale IS honored here** (unlike item #4's hardcoded
+  `'ar'`) — this item threads the real `useLanguage()` value throughout, not
+  a hardcoded constant. Worth noting as a DIFFERENCE from item #4's own
+  scoping decision, not an inconsistency: item #4's sort locale lives in a
+  backend config with no request-scoped user language available the same
+  way; item #5's formatting lives entirely in `apps/web` components that
+  already have the hook in scope.
+- **Locale-aware number/date formatting elsewhere in the STACK** — this item
+  only touches display formatting in `apps/web`. No backend DTO, PDF/export,
+  or Prisma-level formatting was touched; `git diff --stat` confirms this
+  item's entire diff is `apps/web/**` (plus its own new `e2e`/`lib` test
+  files).
+
 ## Where the code lives
 
 - `packages/db/prisma/schema.prisma` — `User.languagePreference` (line ~149) and the
@@ -401,6 +484,46 @@ and Arabic keyboards as documented future work.**
   للتجارة"` under `'ar'` but after it under `'en'` (verified directly
   against Node's ICU before writing the assertion, not assumed).
 
+**Item #5 (partial)** — web-only, no backend files, no migration, no new
+permission:
+
+- `apps/web/lib/i18n/format.ts` — new. `formatMoney(value, language,
+  currency = 'JOD')`, `formatDate(value, language)`,
+  `formatDateTime(value, language)` — the shared utility, `'ar'`/`'en-GB'`
+  locale tags baked in as an internal `LOCALE_BY_LANGUAGE` map.
+- `apps/web/lib/i18n/format.test.ts` — new. 7 vitest tests, including an
+  empirically-verified Arabic-vs-English date-format divergence assertion
+  (stripping the invisible LRM/RLM direction-control codepoints ICU inserts
+  before comparing visible digits, rather than asserting the exact byte
+  sequence).
+- 9 `components/**` files (`ClaimSection`, `PolicySection`,
+  `CommissionSection`, `FinanceSection`, `EndorsementSection`,
+  `ComparisonSection`, `QuotationsSection`, `RecommendationSection`,
+  `ClientDecisionSection`) — each had its own local `money()`/`fmtMoney()`/
+  `fmtDateTime()` removed and replaced with the shared import; a plain
+  helper function that cannot call `useLanguage()` itself (e.g.
+  `coverageLabel()`) gained an explicit `language: Language` parameter
+  instead.
+- 16 `app/(app)/**/page.tsx` files (`claims-analytics`, `client-accounting`,
+  `crm`, `cross-sell` + `cross-sell/[id]`, `financial-report`,
+  `insurance-programs`, `insurer-accounting`, `needs-assessments`,
+  `opportunities` + `opportunities/[id]`, `rfqs` + `rfqs/[id]`,
+  `settings/security`, `up-sell` + `up-sell/[id]`) — the same sweep applied
+  to page-level components and their local sub-components.
+  `client-accounting`'s and `insurer-accounting`'s own local `oldest()`
+  helpers (displaying a raw `dueDate.slice(0, 10)`/`collectedAt.slice(0,
+  10)` ISO fragment — not originally a `toLocaleString`/`toLocaleDateString`
+  call, but still a raw, non-locale-aware date display) were judged in
+  scope and converted to call `formatDate()` too.
+- `apps/web/e2e/locale-formatting.spec.ts` — new. Drives the real, live
+  `useLanguage()` switcher (the same mechanism `language-switcher.spec.ts`
+  exercises) against a real page (`client-accounting`): asserts a rendered
+  date genuinely changes from `en-GB` to `ar` formatting on switch, while
+  the SAME money cell's rendered digits stay byte-identical across the
+  switch — the specific end-to-end proof that the `'ar'`-not-`'ar-JO'`
+  locale-tag choice holds in a real rendered page, not just in the unit
+  test's isolated function calls.
+
 ## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
@@ -497,16 +620,37 @@ not just trusting the exit code) — the one existing tie-break test in
 `finance.config.spec.ts` uses ASCII-only fixture names, unaffected either
 way. `npm run typecheck`/`lint`/`test` (api) OK.
 
+## Verification — item #5 (partial)
+
+Web-only change (no backend files, no migration, no new permission,
+confirmed via `git diff --stat`: 25 files, all under `apps/web`) — no api
+gate applies, but the full web suite was still run in full rather than
+assumed unaffected. +7 new web unit tests (`format.test.ts`, new file) → web
+unit **16/16** (from 9). +1 new Playwright spec (`locale-formatting.spec.ts`)
+— full web suite **294/294** (from 287, split 228 non-`@a11y` + 66 `@a11y`,
+all green, no flakes this run). `npm run typecheck`/`lint`/`build`/`test`
+(web) OK. A whole-codebase grep after the sweep confirmed zero remaining
+`toLocaleString`/`toLocaleDateString` calls and zero remaining local
+`money`/`fmtMoney`/`fmtDateTime` function definitions anywhere in
+`apps/web` — the exhaustive-sweep bar, not a sampled subset. Locale tags
+(`'ar'`/`'en-GB'`) were empirically verified against Node's own ICU via
+`node -e` scripts before being chosen (see "What item #5 covers" above),
+and the choice itself was confirmed with the user directly via
+`AskUserQuestion` rather than assumed.
+
 ## Next
 
-Item #4 is PARTIALLY complete — Arabic sorting only, by explicit user
+Item #4 remains PARTIALLY complete — Arabic sorting only, by explicit user
 scoping decision; Arabic keyboards and national-ID-convention name fields
 remain open, documented future work (see "What item #4 does NOT cover"
-above) — do not assume a future session can mark item #4 fully closed
-without addressing those two. Wait for the user's explicit go-ahead before
-resuming item #4's remaining scope, starting item #5 (locale-aware number/
-date/currency formatting), or any other Part F item — do not self-select.
-Items #5-7 each look like their own multi-session effort (item #7 in
+above). Item #5 is now also PARTIALLY complete — number/date formatting
+only; Hijri calendar and multi-currency (reinsurance) remain open,
+documented future work (see "What item #5 does NOT cover" above). Do not
+assume a future session can mark either item fully closed without
+addressing its own deferred scope. Wait for the user's explicit go-ahead
+before resuming item #4's or item #5's remaining scope, starting item #6
+(bilingual full-text search), or any other Part F item — do not self-select.
+Items #6-7 each look like their own multi-session effort (item #7 in
 particular has no document-generation infrastructure to build on at all
 yet); item #8 (the 4-state screenshot discipline) is a verification overlay
-on whichever of #5-7 land, not a standalone build.
+on whichever of #6-7 land, not a standalone build.
