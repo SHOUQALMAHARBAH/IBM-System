@@ -1,6 +1,6 @@
 # General KPI Dashboard (Process 58)
 
-**Last verified:** 2026-09-09 · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
+**Last verified:** 2026-09-07 · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
 
 ## What this is
 
@@ -131,4 +131,7 @@ is a separate backlog item with its own permission already seeded, to be
 picked up in its own pass. Reconciling this dashboard's simplified finance
 figures with #40's more precise ones if they're ever shown side by side —
 they answer different questions (a fast glance vs. a full report) and are
-not meant to reconcile to the fils.
+not meant to reconcile to the fils. **Part E — the six `dashboard.*.view`-gated
+department dashboards `dashboard.executive.view` (#64) names** —
+`ibms-brain/meta/context/part-e-dashboards.md` (Sales Dashboard built; the
+other five in progress).
