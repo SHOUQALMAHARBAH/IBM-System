@@ -1,6 +1,6 @@
 # Part E — Dashboards & Management Reporting (Part 13)
 
-**Last verified:** 2026-09-07 (Claims Dashboard added) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
+**Last verified:** 2026-09-07 (Financial Dashboard added) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
 
 ## What this is
 
@@ -259,9 +259,92 @@ assertions.
 
 No migration, no new permission.
 
+## Financial Dashboard
+
+Bullet text: "receivables and ageing, payables to insurers, commission
+income and outstanding commission, profitability by client segment/line."
+
+**This is neither a fresh build nor a pure "verify, don't build" outcome —
+a third, in-between shape.** Backlog #40 (`FinancialReportService.summary()`,
+`GET /financial-report/summary`) already computes every one of these four
+sections verbatim — its own doc comment quotes this exact Part E bullet.
+But #40's own `FinancialReportQueryDto` says outright: "No line / insurer /
+branch filters here — those are a Part E dashboard refinement." That is the
+ONE genuine gap between #40 and Part E's cross-cutting "filterable by
+branch/line/insurer/period" rule, and this dashboard supplies it.
+
+**Reused #40's own PURE builders via direct import** —
+`buildReceivablesAgeing` / `buildInsurerPayables` / `buildCommissionRollup` /
+`buildProfitability`, all untouched — rather than re-deriving a single line
+of bucket/rollup/`netPosition` math. The Claims Dashboard "reuse a pure
+function directly" precedent, applied to four functions in one module
+instead of one. `GET /dashboards/financial`'s own `financial-dashboard.
+config.ts` is almost entirely a composition function, not new business
+logic.
+
+**Widened the THREE repositories that feed those builders** with optional
+`insuranceLine`/`insurerId`/`ownerUserIds` scope params — all additive, so
+no existing caller's call site changed:
+- `InvoiceRepository.loadOutstandingReceivables` (#33) — narrowed via the
+  invoice's OPTIONAL `policy` relation (`Invoice.policyId` is nullable), so
+  an invoice with NO linked policy is excluded whenever any of the three is
+  given — a filter on the underlying policy cannot include a receivable
+  with no policy to check it against.
+- `InvoiceRepository.loadInsurerObligations` (#34) — `insurerId` already
+  existed; added `insuranceLine`/`ownerUserIds` the same way, via the
+  policy relation (guaranteed present on this query already).
+- `InvoiceRepository.loadInsurerRemittances` (#34) — **deliberately NOT
+  widened** beyond its existing `insurerId`. A `Remittance` is a lump
+  payment against one insurer with no `Policy` relation of its own
+  (it can cover many invoices/lines/branches in one payment), so
+  `insuranceLine`/`branchId` genuinely cannot narrow it — a real "not
+  applicable" case, the Sales Dashboard "filter applicability is real, not
+  uniform" discipline, not a shortcut.
+- `FinancialReportRepository.loadCommissionRollupEntries` (#40) — added all
+  three (no existing filter at all before).
+- `ProfitabilityPolicyRepository.loadWrittenPolicies` (#40/#63, a SHARED
+  repository) — added an optional trailing `scope` param; `#63`
+  Profitability Analysis's own call site is untouched and re-confirmed
+  green.
+
+**Every section is current-state, like Claims Dashboard — no period
+range**, mirrored exactly from #40's own pre-existing design (not a new
+choice): receivables/payables are point-in-time at a single `asOf`
+reference date; commission/profitability have no date dimension at all
+(the commission ledger and `Policy.issuedPremium` are not time-versioned).
+`asOf` therefore scopes ONLY receivables/payables.
+
+**`dashboard.financial.view`'s role grant (`[FINANCE, MANAGER, EXEC]`) is a
+strict SUBSET of `financial-report.view`'s (`+ EXTERNAL_AUDITOR`)** — so
+there was no practical access gap to close via the Notices "also accepts
+consent.manage" `RequirePermissions`-widening trick (confirmed by mapping
+each seed-file role alias: `FINANCE = FINANCE_COLLECTIONS_OFFICER`,
+`MANAGER = BRANCH_DEPARTMENT_MANAGER`, `EXEC = EXECUTIVE_MANAGEMENT`).
+Kept as its own dedicated Part E permission on a genuinely separate route
+instead — this endpoint's needs (branch/line/insurer filtering) really do
+differ from #40's, unlike Notices' two identical-need callers.
+
+### Where the code lives (Financial Dashboard)
+
+- `apps/api/src/modules/management-reporting/financial-dashboard.
+  {config,service,controller,module}.ts` +
+  `repositories/financial-dashboard.repository.ts` (just
+  `findUserIdsInBranch` — every other repository is reused directly, the
+  #63 "share the repository, not the service" shape: `InvoiceRepository`,
+  `FinancialReportRepository`, `ProfitabilityPolicyRepository` are each
+  independently re-provided in `FinancialDashboardModule`'s own `providers`
+  array, zero `imports`/`exports` wiring to `FinanceModule`).
+- Widened: `repositories/invoice.repository.ts`,
+  `repositories/financial-report.repository.ts`,
+  `repositories/profitability-policy.repository.ts`.
+- `apps/web/app/(app)/dashboards/financial/page.tsx` +
+  `lib/management-reporting/financial-dashboard-api.ts`.
+
+No migration, no new permission.
+
 ## Out of scope for this file
 
-Financial/Compliance dashboards and the Insurer & Employee Performance
+The Compliance Dashboard and the Insurer & Employee Performance
 verification — each a separate pass, to be added to this same file as they
 land (the `data-retention-and-disposal.md` "grow one file per completed
 sub-system" shape, since all six are one backlog item, Process #64). The
