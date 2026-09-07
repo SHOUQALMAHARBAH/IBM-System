@@ -1,8 +1,8 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-07 (item #1 — instant language switch + persistent
-per-user language preference — built and verified) · **Owner:** none named;
-cross-cutting, applies to every screen.
+**Last verified:** 2026-09-07 (item #2 — full RTL layout — built and verified,
+after item #1 — instant language switch + persistent per-user language
+preference) · **Owner:** none named; cross-cutting, applies to every screen.
 
 ## What this is
 
@@ -10,9 +10,9 @@ Part F names 8 cross-cutting tasks, each applying to every screen in the app, no
 single module:
 
 1. Instant language switch without losing session context + a persistent per-user
-   language preference — **built, this entry**.
+   language preference — **built** (see "What item #1 covers" below).
 2. Full RTL layout for Arabic and LTR for English (navigation, forms, tables, charts
-   genuinely mirrored, not just mirrored text) — not started.
+   genuinely mirrored, not just mirrored text) — **built, this entry.**
 3. Bidirectional (bidi) text handling for mixed-content fields — not started (though
    Notices/`PrivacyNoticeDisplay`, Part D, already renders `textAr`/`textEn` side by
    side with `dir="rtl"` on the Arabic paragraph — a CONTENT-level bidi display, not
@@ -31,9 +31,9 @@ single module:
 8. Four-state (loading/empty/error/populated) screenshot evidence per screen — a
    verification DISCIPLINE overlay on 1-7, not a separate build item.
 
-Worked one item at a time, the Part D/E pacing convention — this file covers item #1
-only. Items #2-8 are unbuilt; do not assume they are covered by item #1's own
-infrastructure without checking this file's own "What item #1 does NOT cover" section
+Worked one item at a time, the Part D/E pacing convention — this file now covers
+items #1 and #2. Items #3-8 are unbuilt; do not assume they are covered by item #1
+or #2's own infrastructure without checking each item's own "does NOT cover" section
 below.
 
 ## What item #1 covers
@@ -80,11 +80,81 @@ applied it to rendering. This item:
 - **Login/signup have no switcher.** Both live outside `AppLayout`/`AppNav` (the
   authenticated shell) — a `languagePreference` has nowhere to persist against before
   an account exists. Not wired in this pass.
-- **No RTL layout polish anywhere** (item #2) — mirrored nav/forms/tables/charts is
-  entirely separate, unbuilt work; `dir="rtl"` alone does not achieve "genuinely
-  mirrored, not just mirrored text" for a component that was never built RTL-aware.
 - **No bidi mixed-content handling** (item #3), Arabic input/sorting (item #4), locale
   formatting (item #5), bilingual search (item #6), or document generation (item #7).
+
+## What item #2 covers
+
+**Structural layout mirroring, not translation.** Item #2 is scoped to the
+mechanism — does the LAYOUT of nav/forms/tables/charts genuinely flip sides
+under `dir="rtl"` — not to translating the ~80 still-English screens (that
+remains unbuilt, exactly as item #1 left it; see "What item #2 does NOT
+cover" below). Two techniques, chosen per-surface rather than one blanket
+approach:
+
+- **CSS logical properties, everywhere a physical direction was previously
+  hardcoded.** Every `textAlign: 'left'/'right'` → `'start'/'end'`,
+  `marginLeft/Right` → `marginInlineStart/End`, `borderLeft/Right` →
+  `borderInlineStart/End`, `paddingLeft/Right` → `paddingInlineStart/End`
+  across all `apps/web/components/**/*.styles.ts` shared style modules and
+  every page that inlines a style object — a mechanical, one-for-one
+  substitution (60 files, ~110 lines), verified by a whole-codebase grep
+  confirming **zero remaining physical-direction CSS properties anywhere in
+  `apps/web`** after the change. Because these are LOGICAL values, they read
+  back unchanged in both directions (`getComputedStyle().textAlign` still
+  reports `"start"` whether the page is AR or EN) — proving the mirroring
+  actually happened requires a real bounding-box assertion, not a
+  computed-style check (see `apps/web/e2e/rtl-layout.spec.ts`).
+- **Free mirroring from existing `display: flex`/`flexDirection: row` +
+  `dir` cascading.** The app shell's sidebar (`components/app/app.styles.ts`
+  `shellStyle`) already used plain `flexDirection: 'row'` — once `dir="rtl"`
+  cascades from `<html>` (item #1's own mechanism), the browser mirrors flex
+  item order for free with NO CSS change needed; the sidebar's separator
+  border was the one thing that needed converting (`borderRight` →
+  `borderInlineEnd`, so it stays on the edge touching the content column,
+  not the outer edge, in both directions).
+- **Native `<table>` column mirroring is a plain browser default once
+  `direction` inherits as `rtl`** — no CSS or markup change needed at all.
+  57 files use a native `<table>` element; none needed touching for this
+  item. Verified directly (bounding-box comparison of the first vs. last
+  column header) on one representative page
+  (`apps/web/app/(app)/watchlist-sync/page.tsx`) rather than assumed for all
+  57 — the mechanism is a browser universal, not a per-page CSS concern, so
+  one proof stands for all of them.
+- **Charts: N/A, not silently skipped.** Grepped the whole `apps/web` tree
+  for `recharts`, `chart.js`, `d3`, `<canvas>`, `<svg>` — this app has NO
+  chart/graph visualization anywhere (dashboards render numbers/tables, not
+  visual charts; the only real `<svg>` files are Next.js's own boilerplate
+  `public/*.svg` assets). The "charts genuinely mirrored" sub-requirement is
+  vacuously satisfied today — there is nothing to mirror — and this is
+  worth re-checking the day this app's first real chart component lands,
+  since SVG/canvas do NOT inherit CSS logical-property mirroring the way
+  flex/table layout does; a future chart will need its own RTL treatment,
+  not a free ride from this item's work.
+
+## What item #2 does NOT cover (read before assuming otherwise)
+
+- **Translation of the ~80 still-English screens** — completely unchanged
+  from item #1. A screen's LAYOUT now mirrors correctly under `dir="rtl"`,
+  but its text is exactly as English as it was before this item. Hardcoded
+  English prose containing a directional character (e.g. "New → Contacted →
+  Qualified" in `leads/page.tsx`) stays exactly as written — that is a
+  translation/bidi-text concern (items #3-8's OWN later scope, not this
+  one), not a layout-mirroring bug.
+- **No SSR-aware initial `dir`** — unchanged from item #1's own documented
+  gap; the brief LTR flash on first load for an Arabic-preferring user is
+  still present.
+- **No new component library or per-component RTL audit was needed** —
+  this app has no shared Table/Card/Modal component (reuse happens via
+  shared `*.styles.ts` constant modules), so centralizing the fix in those
+  ~18 shared modules plus a mechanical per-page sweep covered the whole
+  surface in one pass; there was no separate "component-by-component RTL
+  audit" step to do.
+- **Forms**: covered structurally (shared `formRowStyle`/`checkboxRowStyle`
+  in `lead.styles.ts` and `inputStyle`/`labelStyle` in
+  `auth-form.styles.ts` were already direction-agnostic flex layouts with no
+  physical properties) — not a separate build step, a confirmation that the
+  existing shared primitives already had zero RTL debt.
 
 ## Where the code lives
 
@@ -114,7 +184,20 @@ applied it to rendering. This item:
 - `apps/web/e2e/language-switcher.spec.ts` — instant-switch-no-reload, persistence
   round-trip, default-from-account, a11y.
 
-## A real regression caught while verifying this item
+**Item #2** — no backend files, no migration, no new permission:
+
+- `apps/web/components/app/app.styles.ts` — `sidebarStyle`'s `borderInlineEnd`
+  (was `borderRight`); the app-shell choke point for the nav mirroring proof.
+- 59 other page/component files across every feature folder — the mechanical
+  logical-property sweep (see "What item #2 covers" above); no single file
+  worth naming individually beyond the shell.
+- `apps/web/e2e/rtl-layout.spec.ts` — new. Two tests asserting REAL bounding-box
+  mirroring (not computed-style keywords, which read back unchanged in both
+  directions for a logical value): the sidebar nav hugs the opposite screen
+  edge in AR vs. EN, and a table's column order visually reverses (native
+  browser behavior) while DOM order stays identical.
+
+## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
 the page's own navigation request (`page.goto("/leads")`) — a bare glob with no host
@@ -125,7 +208,7 @@ instead of the real shell. Fixed by scoping to the api origin explicitly
 already follows — re-confirmed by grepping for the pattern rather than assuming this
 spec's own mistake was novel.
 
-## Verification
+## Verification — item #1
 
 +1 api unit is not applicable (no dedicated `AuthService` spec, per precedent above);
 +1 new api e2e test in `auth.e2e-spec.ts` (12/12 total, was 11); +3 web unit tests
@@ -141,10 +224,38 @@ batches; the chronic `rbac.e2e-spec.ts` flake needed its established
 against the very large cumulative `db-test` this project's long history has
 accumulated). `npm run typecheck`/`lint`/`build` (api + web) OK.
 
+## Verification — item #2
+
+No backend gate applies (web-only change) — the api suite was re-run anyway as a
+sanity baseline (2320/2320 unit, confirmed unrelated to this item) rather than
+assumed unaffected. +1 new Playwright spec (`rtl-layout.spec.ts`, 2 tests) — full
+web suite **224/224** non-`@a11y` + **66/66** `@a11y` green (one `rfq.spec.ts` test
+hit a transient `write UNKNOWN` — a broken-pipe/process-contention error, not an
+assertion failure — under full-suite parallel load; re-run in isolation 27/27
+clean, not a regression). `npm run typecheck`/`lint`/`build`/`test` (web) OK. This
+item's own diff was reviewed file-by-file in full (60 files, ~110 lines) before
+being trusted — every change is the same mechanical physical-to-logical property
+swap, confirmed by a whole-codebase grep showing zero remaining physical-direction
+CSS properties anywhere in `apps/web` afterward.
+
+**A genuine process note, not a code finding:** this item's actual implementation
+work (the 60-file conversion + the new `rtl-layout.spec.ts`) was already sitting
+uncommitted in the working tree when this session started — done in an earlier
+session that never finished verifying, documenting, or committing it, despite this
+very file and `CLAUDE.md` both still saying item #2 was "not started" and to "wait
+for the user's explicit go-ahead." The work itself held up under a full review (no
+mistakes found across all 60 files) — this entry is what closes the gap between
+"code exists on disk" and "verified, documented, and committed," which is the
+actual bar for "done" per `verification-contract.md`. Worth remembering: a
+context file's "not started" claim is only as current as the last session that
+wrote it — check the working tree itself, not just the doc, before assuming a
+backlog item's real state.
+
 ## Next
 
-Wait for the user's explicit go-ahead before starting item #2 (full RTL layout) or any
-other Part F item — do not self-select. Item #2 is a substantially larger undertaking
-than item #1 (every existing screen's layout needs RTL-aware review, not just one new
-control), and should very likely be its own multi-session effort, possibly broken down
-further rather than attempted as one unit.
+Item #2 is complete. Wait for the user's explicit go-ahead before starting item #3
+(bidi text handling for mixed-content fields) or any other Part F item — do not
+self-select. Items #3-7 each look like their own multi-session effort (item #7
+in particular has no document-generation infrastructure to build on at all yet);
+item #8 (the 4-state screenshot discipline) is a verification overlay on whichever
+of #3-7 land, not a standalone build.

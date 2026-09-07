@@ -71,13 +71,19 @@ documented gap, not silently dropped: see `meta/context/bilingual-ui.md`.
 user is possible (client-only correction, no SSR locale awareness) — acceptable for
 item #1, worth fixing if/when a real cookie-based SSR locale scheme is built. Only the
 language switcher control + the nav shell's account footer are actually bilingual today;
-the rest of the app remains English-only text (though now RTL-container-aware at the
-`<html>` level once Arabic is selected — individual screens have not been laid out for
-RTL yet, which is item #2). Login/signup have no switcher at all yet.
+the rest of the app remains English-only TEXT — but as of item #2 (2026-09-07), every
+screen's LAYOUT (nav/forms/tables) now genuinely mirrors under `dir="rtl"` via CSS
+logical properties + the free flex/table mirroring `dir` already gave the app for
+nothing — see `meta/context/bilingual-ui.md`'s "What item #2 covers" for the full
+detail. Login/signup have no switcher at all yet.
 
-**Revisit if:** items #2-5 begin (full-app translation, RTL layout polish, Arabic-first
-input, locale formatting) — at that point, re-evaluate whether the dictionary should
-grow in place or whether the accumulated translation surface finally justifies migrating
-to a routing-based i18n library instead of continuing to hand-roll it. Also revisit if a
-real SSR locale-cookie/middleware need emerges (e.g. a public-facing, pre-auth bilingual
-page is added) — today's design deliberately defers that.
+**Revisit if:** items #3-5 begin (bidi mixed-content handling, Arabic-first input,
+locale formatting) or full-app TEXT translation is ever scoped as its own item — at
+that point, re-evaluate whether the dictionary should grow in place or whether the
+accumulated translation surface finally justifies migrating to a routing-based i18n
+library instead of continuing to hand-roll it. This item (#2) confirms the hand-rolled
+`<html dir>` approach scales to real layout mirroring with no library needed — that
+question is now answered for LAYOUT; it remains open only for the TEXT-translation
+question a future item would raise. Also revisit if a real SSR locale-cookie/middleware
+need emerges (e.g. a public-facing, pre-auth bilingual page is added) — today's design
+deliberately defers that.

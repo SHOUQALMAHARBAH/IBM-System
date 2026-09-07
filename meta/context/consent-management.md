@@ -91,17 +91,20 @@ trail — Process 44's pre-existing `evaluateMarketingConsent` already reads it 
   index on `SlaTimer(entityType, entityId, workflowName) WHERE resolvedAt IS NULL` — is
   worth doing opportunistically next time this file is touched, not before.
 
-## Touchpoint wiring (2026-09-06)
+## Touchpoint wiring (2026-09-06, widened 2026-09-07)
 
 The backlog names 7 explicit touchpoints where consent must be captured: lead
 capture, onboarding/KYC, needs & risk assessment, RFQ/market placement, claims,
 Group Medical/Life & Motor Fleet, and renewal & cross/up-sell. M03's original
 build (above) shipped a generic capture screen with no per-touchpoint wiring —
-this pass closed that gap for 5 of the 7, and documents the other 2 as a real,
-deliberate, still-open gap rather than a silent omission.
+the 2026-09-06 pass closed that gap for 5 of the 7 and documented the other 2
+as a real, deliberate, still-open gap. A 2026-09-07 audit finding corrected
+that gap analysis for Claims — see "Claims wired" below — leaving only Group
+Medical/Life & Motor Fleet genuinely blocked on missing prerequisite
+infrastructure.
 
-**5 touchpoints wired — Lead capture, onboarding/KYC, needs & risk
-assessment, RFQ/market placement, cross-sell & up-sell:**
+**6 touchpoints wired — Lead capture, onboarding/KYC, needs & risk
+assessment, RFQ/market placement, claims, cross-sell & up-sell:**
 
 - **Lead capture is the one touchpoint that pre-dates a Customer row** — a
   `Lead` has no `customerId`/`insuredPersonId` to hang a `ConsentRecord` off
@@ -154,17 +157,32 @@ assessment, RFQ/market placement, cross-sell & up-sell:**
   - Purpose mapping per touchpoint: onboarding/KYC → `KYC_AML`; needs &
     risk assessment → `UNDERWRITING`; RFQ/market placement →
     `SHARING_WITH_INSURER` (data is being shared with insurers at this
-    step); cross-sell and up-sell → `MARKETING` (a solicitation).
+    step); claims → `CLAIMS`; cross-sell and up-sell → `MARKETING` (a
+    solicitation).
+- **Claims wired 2026-09-07** — the 2026-09-06 pass's premise ("there is no
+  web UI for an individual claim record anywhere in `apps/web`") was false
+  by the time a code-reviewer audit checked it: `ClaimSection.tsx`
+  (`apps/web/components/policy/ClaimSection.tsx`) is a real, reachable
+  per-claim management UI (notification through closure), mounted on
+  `apps/web/app/(app)/opportunities/[id]/page.tsx` since Part C #23-30
+  shipped — a claims-analytics AGGREGATE page existing alongside it never
+  meant a per-claim UI didn't. The opportunities detail page already
+  resolves `opportunity.customerId` for its own "All opportunities" link,
+  so no repository-resolution work was needed at all (LESS work than the
+  needs-assessment/RFQ touchpoints, which needed to resolve `customerId`
+  through an injected repository first). `ConsentCaptureWidget` is mounted
+  directly in `opportunities/[id]/page.tsx`, immediately before
+  `<ClaimSection>` (`purpose="CLAIMS"`, `label="Claims consent"`,
+  `defaultConsentTextVersion="claims-notice-v1"`) rather than at the top of
+  the page like the single-purpose touchpoint pages — this page stacks
+  seven distinct process sections (Recommendation, Client Decision, Policy,
+  Endorsement, Finance, Commission, Claims), so the widget sits at the top
+  of ITS OWN section, the same "top of the relevant section" placement the
+  single-section pages use.
 
-**2 touchpoints deliberately NOT wired — a real, documented gap, not an
-oversight (confirmed with the user before proceeding rather than silently
-expanding scope):**
+**1 touchpoint deliberately NOT wired — a real, documented gap, not an
+oversight:**
 
-- **Claims** — there is no web UI for an individual claim record anywhere
-  in `apps/web` (only the `claims-analytics` AGGREGATE page); claim
-  management is API-only. There is no page to mount a widget onto. The
-  generic `/consent` screen remains the reachable capture path for a
-  claim's `customerId` + `purpose: CLAIMS` today.
 - **Group Medical/Life & Motor Fleet** — this touchpoint is about consent
   for the COVERED INDIVIDUALS (dependents/employees/drivers) under a
   group/fleet policy, which maps to `InsuredPerson`. `InsuredPerson` has
@@ -174,9 +192,15 @@ expanding scope):**
   #66 Employee or #69 InformationAsset), not something to build as a side
   effect of a Consent pass.
 
-Closing these 2 remaining touchpoints requires building the underlying
-capability (a Claims detail UI; an `InsuredPerson` CRUD module) FIRST —
-they are not Consent bugs, they are missing prerequisite infrastructure.
+Closing this remaining touchpoint requires building the underlying
+capability (an `InsuredPerson` CRUD module) FIRST — it is not a Consent bug,
+it is missing prerequisite infrastructure. Note that `PrivacyNoticeDisplay`
+(Part D's Notices system, `apps/web/components/pdpl/PrivacyNoticeDisplay.tsx`)
+was mounted at the same 5 original touchpoints on the same "Claims has no UI"
+premise and is now ALSO stale for Claims — that widget's own wiring is
+`meta/context/part-d-completion.md`'s scope, not this file's, and was
+deliberately left untouched by the 2026-09-07 Consent fix (a different,
+undiscussed finding).
 
 ## Where the code lives
 
@@ -199,17 +223,18 @@ they are not Consent bugs, they are missing prerequisite infrastructure.
   standalone register screen (now also supports the `leadId` owner kind).
 - `apps/web/components/pdpl/ConsentCaptureWidget.tsx` — the shared touchpoint widget,
   mounted on `customers/[id]`, `needs-assessments/[id]`, `rfqs/[id]`,
-  `cross-sell/[id]`, `up-sell/[id]`.
+  `opportunities/[id]` (Claims, added 2026-09-07), `cross-sell/[id]`, `up-sell/[id]`.
 
 ## Out of scope for this file
 
-M04 (DSR) is now built too — see `meta/context/data-subject-requests.md`. Building a
-Claims web UI or an `InsuredPerson` CRUD module — the two prerequisites the deliberate
-touchpoint gaps above are waiting on — is out of scope here; when either lands, this
-file's own touchpoint-wiring section is the place to add the 6th/7th widget mount, not
-a new file. The other seven Part D / PCMS systems — M05 (access governance — partially
-covered by `roles-and-segregation-of-duties.md`), M06 (Retention & Disposal —
-`data-retention-and-disposal.md`), M07 (Vendor Risk), M08 (Data Sharing), M09
-(Incident & Breach), M10 (DPIA), the privacy-notice / RoPA requirements, and the DPO
-Workspace dashboard — none of these are built yet. `pcms-privacy-modules.md` is the
-M01-M12 map; a future module gets its own file here the same way this one did.
+M04 (DSR) is now built too — see `meta/context/data-subject-requests.md`. Building an
+`InsuredPerson` CRUD module — the one remaining prerequisite the deliberate touchpoint
+gap above is waiting on — is out of scope here; when it lands, this file's own
+touchpoint-wiring section is the place to add the 7th widget mount, not a new file.
+Part D's other systems (Notices/RoPA/Cross-Border Transfer/Data Sharing/DPIA/DPO
+Workspace — see `meta/context/part-d-completion.md`) are built but out of this file's
+scope; in particular, `PrivacyNoticeDisplay`'s own Claims gap (noted above) is that
+file's to close, not this one's. M05 (access governance — partially covered by
+`roles-and-segregation-of-duties.md`), M07 (Vendor Risk), M09 (Incident & Breach — see
+`meta/context/incident-management.md`) remain out of this file's scope.
+`pcms-privacy-modules.md` is the M01-M12 map.
