@@ -1,11 +1,13 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-08 (item #6 — bilingual full-text search —
-PARTIALLY built: full-text search only (Arabic + English), on `Customer`/
-`Prospect`/`Vendor`; fuzzy transliteration matching and same-script typo
-tolerance both explicitly deferred, `Insurer` excluded — no dedicated
-module/list page exists for it — after item #4 — Arabic-first input
-(closed, one narrow exception), item #5 — locale-aware number/date
+**Last verified:** 2026-09-08 (item #6 remainder — fuzzy transliteration
+matching — PARTIALLY built: a curated synonym table only, on the same
+`Customer`/`Prospect`/`Vendor` entity scope as item #6's own full-text
+search; a distance-based fuzzy matcher was evaluated and REJECTED after
+empirical testing showed an unacceptable false-positive rate; same-script
+typo tolerance and `Insurer` search remain deferred — after item #6 itself
+— bilingual full-text search (Arabic + English), item #4 — Arabic-first
+input (closed, one narrow exception), item #5 — locale-aware number/date
 formatting (partial), item #3 — bidi text handling, item #2 — full RTL
 layout, and item #1 — instant language switch) · **Owner:** none named;
 cross-cutting, applies to every screen.
@@ -44,16 +46,16 @@ single module:
    different size ("optional" per the bullet's own wording for Hijri), and the user
    confirmed fixing only number/date formatting for now.
 6. Full-text search across Arabic and English with fuzzy transliteration matching —
-   **PARTIALLY built, this entry: full-text search only, on `Customer`/`Prospect`/
-   `Vendor`.** Fuzzy transliteration matching (typing "Ahmad" in Latin script finding
-   a record stored as "أحمد" in Arabic, or vice versa) and same-script typo tolerance
-   (`pg_trgm`) are both explicitly deferred as future work (see "What item #6 covers/
-   does NOT cover" below) — a user scoping decision: this bullet bundles two
-   sub-problems of very different size, and the user confirmed fixing only real
-   full-text search for now. `Insurer` was excluded from the entity scope — it has no
-   dedicated module or web list page anywhere in this app (only narrow lookups inside
-   RFQ/commission), so adding search to it would mean building its first browse
-   screen from scratch.
+   full-text search **built** (see "What item #6 covers" below); fuzzy
+   transliteration matching **PARTIALLY built, this entry: a curated synonym table
+   only** (see "What item #6 remainder covers" below) — a distance-based fuzzy
+   matcher (the other real way to do this) was evaluated and REJECTED after
+   empirical testing against this Postgres install showed an unacceptable
+   false-positive rate, not merely deferred for later. Same-script typo tolerance
+   (`pg_trgm`) remains explicitly deferred as future work. `Insurer` remains excluded
+   from the entity scope — it has no dedicated module or web list page anywhere in
+   this app (only narrow lookups inside RFQ/commission), so adding search to it would
+   mean building its first browse screen from scratch.
 7. System-generated bilingual documents (quotation comparison, recommendation report,
    policy schedule, invoices, certificates, complaint acknowledgements) — not started;
    no document-generation infrastructure (PDF or otherwise) exists anywhere in this app
@@ -509,12 +511,11 @@ same-script typo tolerance as future work.**
 
 ## What item #6 does NOT cover (read before assuming otherwise — explicitly deferred future work)
 
-- **Fuzzy transliteration matching** — out of scope by user decision.
-  Typing "Ahmad" in Latin script does NOT find a record stored as "أحمد"
-  in Arabic, or vice versa. No Postgres extension or common library does
-  this well; it would need a maintained transliteration mapping (e.g.
-  Buckwalter-style) plus fuzzy comparison — nothing to build on, unlike
-  full-text search's own real built-in `'arabic'` config.
+- **Fuzzy transliteration matching** — PARTIALLY addressed since this was
+  first written; see "What item #6 remainder covers"/"does NOT cover"
+  below for the curated-synonym-table build and its own, separate,
+  documented coverage limit. This bullet is left here as a pointer, not
+  duplicated.
 - **Same-script typo tolerance** — also out of scope by user decision,
   deferred alongside transliteration rather than built separately.
   `pg_trgm`/`unaccent`/`fuzzystrmatch` are available on this Postgres
@@ -536,6 +537,90 @@ same-script typo tolerance as future work.**
 - **A relevance-ranked or highlighted result** — `ts_rank`/`ts_headline`
   were not added; results are returned in each entity's own existing sort
   order (`createdAt desc`), a plain filter, not a ranked search experience.
+
+## What item #6 remainder covers (curated synonym table — a deliberate rejection of distance-based fuzzy matching)
+
+Before building anything, two real mechanisms were evaluated empirically
+against this actual Postgres install (18-alpine), not assumed:
+
+- **Distance-based fuzzy matching — evaluated and REJECTED as a primary
+  match rule.** The `transliteration` npm package (real, maintained) was
+  installed and run against common Arabic given names — it outputs a
+  Buckwalter-style consonant skeleton (`محمد` → `mHmd`, `أحمد` → `'Hmd`).
+  Reducing a natural Latin spelling the same way (strip vowels, fold case)
+  and comparing via `pg_trgm` similarity / `fuzzystrmatch`'s `levenshtein()`
+  (both installed on `db-test` for this spike, then dropped again
+  afterward — this was a research spike, not a build) produced a genuine,
+  measured problem: true-positive pairs like "Yousef"/"يوسف" (Levenshtein 1,
+  trigram 0.29) scored in the SAME range as a real false positive — "Khaled"
+  against a stored "Khalil," a different person (Levenshtein 1, trigram
+  0.43). No threshold separates the two. This is the same known collision
+  problem Soundex/Metaphone have on short English names, applied to short
+  3-5-letter Arabic name skeletons — inherent to phonetic-key matching on a
+  small alphabet, not an artifact of this specific normalization; a
+  hand-rolled Arabic phonetic key would hit the identical ceiling for more
+  build cost. A customer/prospect/vendor search surfacing a different
+  person's record on a common name was judged worse than the bounded
+  coverage below — presented to the user with the measured numbers via
+  `AskUserQuestion` before choosing a direction, not assumed.
+- **ICU's Transliterator / commercial transliteration APIs — ruled out
+  structurally**, not tested: `Intl` (Node's only ICU surface) exposes
+  formatting, not the general Transliterator class, and no well-maintained
+  npm binding for it exists; a commercial API would mean sending
+  customer/prospect names to a third party — a real PDPL data-residency
+  question for identity-adjacent data, plus a new external dependency this
+  app has never taken on, disproportionate for a search box.
+- **`pg_trgm`/`fuzzystrmatch` alone — ruled out structurally**: they compare
+  character sequences within one alphabet; an Arabic string and a Latin
+  string share zero characters, so similarity is always ~0 regardless of
+  how similar the names actually sound. They can only help AFTER something
+  transliterates one side into the other's alphabet — which is exactly the
+  mechanism tested and rejected above.
+
+**What was built instead — a curated synonym table**, extending item #6's
+existing `searchIds()`/`websearch_to_tsquery` mechanism rather than adding
+new fuzzy-matching machinery or a schema migration:
+
+- `apps/api/src/common/name-transliteration.config.ts` — ~50 groups of
+  KNOWN equivalent spellings for common Jordanian/Arab given names across
+  both scripts (e.g. `['mohammed', 'muhammad', 'mohamed', ..., 'محمد']`),
+  including the hamza-dropped Arabic spelling where that's commonly typed
+  casually (`أحمد`/`احمد`). `expandSearchTerms(term)` tokenizes the query on
+  whitespace and returns every OTHER spelling in any group a token
+  exactly (case-insensitively, diacritic-stripped) matches — never a
+  distance-based guess, so the false-positive problem above does not
+  apply here: this is an exact/stemmed lookup on a literal known term, the
+  same guarantee item #6's own tsvector search already gives.
+- Each of the 3 repositories' `searchIds(term)` now ORs the original
+  `term` with every string `expandSearchTerms(term)` returns, each still
+  its own parameterized `websearch_to_tsquery(...)` call via Prisma's
+  `Prisma.sql`/`Prisma.join` (no string concatenation — the same
+  SQL-injection guarantee as the single-term case). **No schema migration,
+  no new column** — this only expands the QUERY side; the existing
+  `searchVector` generated column from item #6 is untouched.
+- Entity scope is IDENTICAL to item #6 itself (`Customer`, `Prospect`,
+  `Vendor`) — this reuses the same `searchIds()` method those repositories
+  already had, so there was no separate scoping decision to make here.
+
+## What item #6 remainder does NOT cover (read before assuming otherwise)
+
+- **Any name not in the curated table** — coverage is bounded to the ~50
+  groups built (the most common Jordanian/Arab given names), not a
+  linguistically authoritative or complete list. An uncommon name gets no
+  variant-matching at all; extend the table as real gaps surface.
+- **Family-name/surname components** (e.g. "Al-"/"El-" prefixes,
+  compound surnames) — deliberately excluded; they compose with far more
+  variation than a fixed-group table can safely represent without
+  reintroducing false-positive risk.
+- **Same-script typo tolerance** — still fully deferred, unchanged from
+  item #6's own original scope (see "What item #6 does NOT cover" above).
+- **`Insurer` search** — still excluded, unchanged from item #6's own
+  original scope (no dedicated module or web list page exists for it).
+- **A distance-based/probabilistic fuzzy matcher** — deliberately NOT
+  built, for the false-positive reason measured and documented above. A
+  future session revisiting this should re-read that finding before
+  re-attempting a fuzzy-distance design; the ceiling is inherent to the
+  algorithm class, not this implementation.
 
 ## Where the code lives
 
@@ -824,6 +909,31 @@ permission:
   job) — the same web-proves-wiring/api-proves-behavior split this
   session has used throughout Part F.
 
+**Item #6 remainder (curated synonym table)** — api-only, no migration, no
+new permission, no web files touched (confirmed via `git diff --stat`):
+
+- `apps/api/src/common/name-transliteration.config.ts` — new.
+  `NAME_TRANSLITERATION_GROUPS` (~50 groups) + `expandSearchTerms(term)`.
+  `name-transliteration.config.spec.ts` — 9 new unit tests (case
+  insensitivity, hamza-dropped Arabic spelling, diacritic-stripping,
+  multi-word terms expanding only the matching word, no variant for an
+  unknown name, no duplicate variants).
+- `apps/api/src/repositories/customer.repository.ts` /
+  `prospect.repository.ts` / `vendor.repository.ts` — each `searchIds()`
+  now builds `[term, ...expandSearchTerms(term)]` and ORs a
+  `websearch_to_tsquery(...)` check per term via `Prisma.sql`/
+  `Prisma.join` (previously a single fixed query per call). `Prisma` was
+  already imported as a TYPE in 2 of the 3 files (for `Prisma.Decimal`) —
+  switched to a value import (`import { Prisma } from '@ibms/db'`) since
+  `Prisma.sql`/`Prisma.join` are runtime functions, not types.
+- `apps/api/test/customer.e2e-spec.ts` / `prospect.e2e-spec.ts` /
+  `vendor.e2e-spec.ts` — 2 new tests each (6 total): a Latin search term
+  finding a record whose name field contains ONLY the Arabic spelling
+  (never the Latin form anywhere in the document), and the reverse — both
+  prove the base bilingual tsvector query alone could NOT have found the
+  match (the two scripts share no tokens), so only the variant expansion
+  explains the result.
+
 ## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
@@ -999,23 +1109,51 @@ rows in `db` (`SELECT legalName, searchVector FROM "Customer"`) before
 trusting the e2e suite, confirming the generated column populated
 correctly on data that predates this migration, not just on new inserts.
 
+## Verification — item #6 remainder
+
+Pure api change — no migration, no web files touched, confirmed via `git
+diff --stat`. A research spike preceded the build: `pg_trgm`/
+`fuzzystrmatch` were installed on `db-test` and the `transliteration` npm
+package was installed locally purely to measure the false-positive rate
+documented above — both reverted (extensions dropped, npm package never
+added to any `package.json`) before any code was written, so neither
+appears in this item's diff. +9 new unit tests
+(`name-transliteration.config.spec.ts`) → api unit **2335/2335** (from
+2326). +6 new api e2e tests (2 per entity × `Customer`/`Prospect`/`Vendor`:
+Latin-query-finds-Arabic-only-stored-name, and the reverse) — targeted
+`customer`/`prospect`/`vendor` e2e: **49/49**. Full 62-file api e2e suite:
+**311/311** (from 305) — 307 passed on the first full-suite run, the
+remaining 4 (`rbac.e2e-spec.ts` ×3, `up-sell.e2e-spec.ts` ×1) hit the
+30-second default test timeout under full-suite parallel load; re-run in
+isolation with this suite's own established `--testTimeout=180000`
+precedent, all 4 passed cleanly (`rbac.e2e-spec.ts` is *ALREADY* documented
+in this codebase's own history as a chronic timeout flake under full-suite
+load, unrelated to this item; `up-sell.e2e-spec.ts` timing out here is the
+same transient full-suite-contention class, not a repeat offender).
+`npm run typecheck`/`lint`/`test` (api) OK; no `build`/web gate applies
+(pure backend change).
+
 ## Next
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
 `InsuredPerson` name-splitting, deferred until that model gets real CRUD
 (see "What item #4 does NOT cover" above) — this is a pre-existing gap this
-item did not create and is not blocking on. **Item #6 is now also PARTIALLY
-built** — full-text search only, on `Customer`/`Prospect`/`Vendor`; fuzzy
-transliteration matching, same-script typo tolerance, and `Insurer` search
-all remain open, documented future work (see "What item #6 does NOT cover"
-above). Item #5 remains PARTIALLY complete — number/date formatting only;
-Hijri calendar and multi-currency (reinsurance) remain open, documented
-future work (see "What item #5 does NOT cover" above). Do not assume a
-future session can mark item #5 or item #6 fully closed without addressing
-its own deferred scope. Wait for the user's explicit go-ahead before
-resuming item #5's or item #6's remaining scope, starting item #7 (system-
-generated bilingual documents), or any other Part F item — do not
-self-select. Item #7 in particular has no document-generation
-infrastructure to build on at all yet, so it looks like its own
-multi-session effort; item #8 (the 4-state screenshot discipline) is a
-verification overlay on whichever of #5-7 land, not a standalone build.
+item did not create and is not blocking on. **Item #6 remains PARTIALLY
+built, now on BOTH sub-problems**: full-text search itself is done; fuzzy
+transliteration matching now has a curated synonym table (bounded coverage,
+see "What item #6 remainder does NOT cover" above) rather than nothing at
+all — a distance-based fuzzy matcher was evaluated and deliberately
+REJECTED, not merely deferred, so do not re-attempt one without re-reading
+that finding first. Same-script typo tolerance and `Insurer` search remain
+open, documented future work. Item #5 remains PARTIALLY complete —
+number/date formatting only; Hijri calendar and multi-currency
+(reinsurance) remain open, documented future work (see "What item #5 does
+NOT cover" above). Do not assume a future session can mark item #5 or item
+#6 fully closed without addressing its own deferred scope. Wait for the
+user's explicit go-ahead before resuming item #5's or item #6's remaining
+scope, starting item #7 (system-generated bilingual documents), or any
+other Part F item — do not self-select. Item #7 in particular has no
+document-generation infrastructure to build on at all yet, so it looks like
+its own multi-session effort; item #8 (the 4-state screenshot discipline)
+is a verification overlay on whichever of #5-7 land, not a standalone
+build.
