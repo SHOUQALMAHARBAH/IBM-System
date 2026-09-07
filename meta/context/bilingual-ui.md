@@ -1,8 +1,9 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-07 (item #2 — full RTL layout — built and verified,
-after item #1 — instant language switch + persistent per-user language
-preference) · **Owner:** none named; cross-cutting, applies to every screen.
+**Last verified:** 2026-09-07 (item #3 — bidi text handling for mixed-content
+fields — built and verified, after item #1 — instant language switch — and
+item #2 — full RTL layout) · **Owner:** none named; cross-cutting, applies to
+every screen.
 
 ## What this is
 
@@ -12,11 +13,13 @@ single module:
 1. Instant language switch without losing session context + a persistent per-user
    language preference — **built** (see "What item #1 covers" below).
 2. Full RTL layout for Arabic and LTR for English (navigation, forms, tables, charts
-   genuinely mirrored, not just mirrored text) — **built, this entry.**
-3. Bidirectional (bidi) text handling for mixed-content fields — not started (though
-   Notices/`PrivacyNoticeDisplay`, Part D, already renders `textAr`/`textEn` side by
-   side with `dir="rtl"` on the Arabic paragraph — a CONTENT-level bidi display, not
-   the mixed-content-in-one-field case this bullet actually names).
+   genuinely mirrored, not just mirrored text) — **built** (see "What item #2
+   covers" below).
+3. Bidirectional (bidi) text handling for mixed-content fields — **built, this
+   entry.** Distinct from Notices/`PrivacyNoticeDisplay` (Part D), which renders
+   `textAr`/`textEn` side by side with `dir="rtl"` on the Arabic paragraph — a
+   CONTENT-level bidi display of two whole, separate fields, not the
+   mixed-content-in-one-field case this item actually names.
 4. Arabic-first input (Arabic keyboards, national-ID-convention name fields, correct
    Arabic sorting) — not started.
 5. Locale-aware number/date/currency formatting (Gregorian + optional Hijri, JOD base +
@@ -32,8 +35,8 @@ single module:
    verification DISCIPLINE overlay on 1-7, not a separate build item.
 
 Worked one item at a time, the Part D/E pacing convention — this file now covers
-items #1 and #2. Items #3-8 are unbuilt; do not assume they are covered by item #1
-or #2's own infrastructure without checking each item's own "does NOT cover" section
+items #1-3. Items #4-8 are unbuilt; do not assume they are covered by item #1, #2,
+or #3's own infrastructure without checking each item's own "does NOT cover" section
 below.
 
 ## What item #1 covers
@@ -156,6 +159,78 @@ approach:
   physical properties) — not a separate build step, a confirmation that the
   existing shared primitives already had zero RTL debt.
 
+## What item #3 covers
+
+**A single field/string that may itself mix Arabic and Latin script** — e.g.
+an Arabic customer/company legal name, an Arabic insurance-line label sitting
+next to a Latin policy number, an Arabic address containing a Latin building
+number, a person's name typed in either script. This is distinct from item
+#2 (whole-SCREEN layout mirroring) and distinct from `PrivacyNoticeDisplay`'s
+`textAr`/`textEn` (two whole, separate single-language fields shown
+together, not one field mixing scripts). Per `verification-contract.md`'s own
+"Bidirectional text" section, the four named categories are: Arabic
+customer/company names containing English codes, Arabic insurance names
+containing policy/product codes, English reference numbers inside Arabic
+forms, Arabic addresses containing Latin characters — no concrete field list
+existed anywhere in the brain beyond these four categories; a codebase survey
+(schema + render-site grep) identified the real fields at risk.
+
+Two native, zero-JS-logic HTML/CSS mechanisms cover this, applied at ~30
+files:
+
+- **Display**: every dynamically-rendered value from an at-risk field is
+  wrapped in a native `<bdi>` element — `<bdi>{value}</bdi>`. `<bdi>`
+  isolates the value's bidi runs from surrounding text and auto-detects its
+  own base direction from content — the exact mechanism the HTML spec
+  designed for "third-party/user-generated content of unknown
+  directionality." Where two independently-directioned values are joined by
+  a literal separator (e.g. `PolicySection.tsx`'s
+  `insuranceLine · policyNumber`, `ClaimSection.tsx`'s claim-number line and
+  `causeOfLoss — lossLocation`), each value is wrapped SEPARATELY — `` <bdi>
+  {a}</bdi> · <bdi>{b}</bdi> `` — so the separator glyph sits between two
+  isolated runs and stays stable, rather than one wrapper around the whole
+  concatenated string. Fixed once at the shared `ProfileField` primitive
+  (`customers/[id]/page.tsx`, `prospects/[id]/page.tsx`) rather than
+  per-call-site, the same "fix the shared primitive once" precedent item #2
+  used for `app.styles.ts`.
+- **Form inputs**: `dir="auto"` added to every `<input>`/`<textarea>`
+  capturing a field that may be typed in either script (name, address,
+  free-text description, insurance-line filter) — the browser then sets
+  caret/alignment direction from the first strong character typed, instead
+  of inheriting a fixed direction from the page.
+- Fields NOT touched: dedicated single-language pairs (`titleAr`/`bodyAr`/
+  `textAr`/`nameAr`) — already correctly handled via hardcoded `dir="rtl"`
+  from earlier work, not a mixed-content case; enum/status/id fields
+  (ASCII-only, no bidi ambiguity); `WatchlistEntry`/`ScreeningResult` fields
+  (confirmed via grep — never rendered on the frontend at all, a
+  backend-only model; screening logs counts/listSource only, per
+  `sensitive-data-handling.md`, so there is genuinely nothing to fix there).
+
+## What item #3 does NOT cover (read before assuming otherwise)
+
+- **No visual/pixel proof that bidi rendering "looks right"** — the
+  browser's own Unicode Bidirectional Algorithm (UAX #9) implementation is
+  not under test here (that's a browser-vendor concern); the new
+  `apps/web/e2e/bidi-text.spec.ts` proves only that OUR markup applies the
+  isolation mechanism (a genuine `<bdi>` tag around the value, a real
+  `dir="auto"` on the input) — a structural claim, not a rendering one. This
+  mirrors item #2's own "prove the mechanism, not just that text is
+  present" testing philosophy.
+- **Translation of the ~80 still-English screens** — unchanged from items
+  #1-2; this item is about mixed-SCRIPT isolation within a field, not about
+  which language the field's own label/surrounding prose is written in.
+- **Arabic-first input, keyboards, or sorting/collation** (item #4) — a
+  `dir="auto"` input still accepts whatever the OS keyboard sends; it does
+  not add an Arabic keyboard, a national-ID-convention name-field layout, or
+  Arabic collation anywhere.
+- **Locale-aware number/date/currency formatting** (item #5) — untouched.
+- **System-generated bilingual documents** (item #7) — untouched; no
+  document-generation infrastructure exists in this app yet regardless.
+- **Not every string field in the schema** — only fields a real user would
+  plausibly type bilingual/mixed content into (names, addresses, product/
+  line labels, free-text descriptions, reference numbers shown adjacent to
+  those). Pure numeric/enum/id fields were deliberately left untouched.
+
 ## Where the code lives
 
 - `packages/db/prisma/schema.prisma` — `User.languagePreference` (line ~149) and the
@@ -196,6 +271,40 @@ approach:
   directions for a logical value): the sidebar nav hugs the opposite screen
   edge in AR vs. EN, and a table's column order visually reverses (native
   browser behavior) while DOM order stays identical.
+
+**Item #3** — no backend files, no migration, no new permission:
+
+- `apps/web/components/customer/CustomerOnboardingWizard.tsx` — the shared
+  Customer/UBO onboarding form; `dir="auto"` on legal name, registration
+  number, address, nature of business, tax registration number, UBO full
+  name; `<bdi>` around every legal-name mention in the review/confirmation
+  prose.
+- `apps/web/app/(app)/customers/[id]/page.tsx` — the shared `ProfileField`
+  primitive gained `<bdi>` around its rendered value (covers registered
+  address/registration number/tax registration number/national ID/contact
+  fields for free); the `legalName` `<h1>` wrapped directly.
+  `apps/web/app/(app)/prospects/[id]/page.tsx`'s own local `ProfileField`
+  got the identical fix.
+- `apps/web/components/policy/PolicySection.tsx` /
+  `apps/web/components/policy/ClaimSection.tsx` — the two confirmed
+  concatenation risk sites (`insuranceLine · policyNumber`, claim number,
+  `causeOfLoss — lossLocation`, third-party/adjuster name) — each value
+  wrapped in its OWN `<bdi>`, not one wrapper around the joined string;
+  `dir="auto"` added to the adjuster name/firm and cause-of-loss/location/
+  third-party-name inputs.
+- ~25 other page/component files across customers, prospects, vendors,
+  insurers (accounting/commission/financial-report/RFQ/operational-PI-risk
+  pages), complaints, and the management-reporting dashboards/analytics
+  breakdown tables — the mechanical `<bdi>`/`dir="auto"` sweep (see "What
+  item #3 covers" above); no single file worth naming individually beyond
+  the primitives above.
+- `apps/web/e2e/bidi-text.spec.ts` — new. Three tests: a customer legal name
+  (and, via the shared `ProfileField`, its registered address) each render
+  inside a genuine `<bdi>` element; a policy number sitting next to an
+  Arabic insurance-line label are each their OWN isolate (an exact-text
+  match against either value alone would fail if a single shared wrapper
+  held both); a mixed-content capture input (`vendors` create form) carries
+  `dir="auto"`.
 
 ## A real regression caught while verifying item #1
 
@@ -251,11 +360,36 @@ context file's "not started" claim is only as current as the last session that
 wrote it — check the working tree itself, not just the doc, before assuming a
 backlog item's real state.
 
+## Verification — item #3
+
+No backend gate applies (web-only change, confirmed via `git diff --stat` before
+commit) — the full web suite was still run in full rather than assumed
+unaffected. +1 new Playwright spec (`bidi-text.spec.ts`, 3 tests) — full web
+suite **227/227** non-`@a11y` + **66/66** `@a11y` green. `npm run
+typecheck`/`lint`/`build`/`test` (web) OK. Field survey (schema + render-site
+grep) done before the sweep, not sampled after — ~30 files touched across every
+model field identified as a genuine mixed-content risk (customer/prospect/
+vendor/UBO names, addresses, registration numbers, policy numbers, insurance
+lines, claim numbers/cause-of-loss/loss-location, adjuster/third-party names,
+complaint issue/resolution, dashboard breakdown labels); confirmed via grep
+that `WatchlistEntry`/`ScreeningResult` fields (also schema-level risks) are
+never rendered on the frontend at all, so genuinely nothing to fix there.
+
+A build-cache gotcha caught while verifying: the new spec's first run found
+zero `<bdi>` elements at all, even though the source edits were correct —
+Playwright's `webServer` reuses an existing `next start` process
+(`reuseExistingServer: !process.env.CI`) serving the LAST `npm run build`
+output, not live source; every source edit needs a fresh `npm run build`
+before the next Playwright run picks it up. The exact same class of gotcha
+item #2's own Claims-consent-widget fix hit once already ("a leftover
+port-3000 server from before my edit") — worth checking `.next/`'s build
+recency, not just the source diff, before trusting an e2e failure.
+
 ## Next
 
-Item #2 is complete. Wait for the user's explicit go-ahead before starting item #3
-(bidi text handling for mixed-content fields) or any other Part F item — do not
-self-select. Items #3-7 each look like their own multi-session effort (item #7
-in particular has no document-generation infrastructure to build on at all yet);
-item #8 (the 4-state screenshot discipline) is a verification overlay on whichever
-of #3-7 land, not a standalone build.
+Item #3 is complete. Wait for the user's explicit go-ahead before starting item #4
+(Arabic-first input: keyboards, national-ID-convention name fields, correct Arabic
+sorting) or any other Part F item — do not self-select. Items #4-7 each look like
+their own multi-session effort (item #7 in particular has no document-generation
+infrastructure to build on at all yet); item #8 (the 4-state screenshot discipline)
+is a verification overlay on whichever of #4-7 land, not a standalone build.
