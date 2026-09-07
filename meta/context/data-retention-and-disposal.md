@@ -1,6 +1,8 @@
 # Data retention & secure disposal (M06)
 
-**Last verified:** 2026-09-07 · **Owner:** DPO (role, not yet a named person)
+**Last verified:** 2026-09-07 (widened `LegalHold` with a structured subject reference, closing
+the M04/M06 integration gap — see `data-subject-requests.md`) · **Owner:** DPO (role, not
+yet a named person)
 
 ## What this is
 
@@ -30,10 +32,16 @@ RetentionScheduleItem
 
 LegalHold
   scope, reason, placedAt, nextReviewDueAt (6-month SLA), releasedAt?
-  retentionScheduleItemId: string?        # NEW this build — a hold now OPTIONALLY names the
+  retentionScheduleItemId: string?        # a hold now OPTIONALLY names the
                                            # RetentionScheduleItem category it excludes from
                                            # disposal; null means the hold exists but isn't
                                            # wired to a disposal-eligibility check yet
+  customerId: string?                     # NEW 2026-09-07 (migration 20260916120000) — at
+  insuredPersonId: string?                # most one of these two may be set (both may be
+                                           # absent — the pre-widening, category/scope-text
+                                           # shape). Lets a hold name ONE data subject
+                                           # structurally, so DsrService.fulfil() can query
+                                           # it live instead of trusting scope's free text.
 
 DisposalBatch
   status: NOMINATED → MANAGER_APPROVED → DPO_APPROVED → EXECUTED → CLOSED
@@ -84,6 +92,18 @@ DisposalBatch
   approval steps. This is the same "re-derive the approval gate from live data" discipline
   `#16` (Broker Recommendation) established — a hold placed after nomination but before DPO
   approval still blocks execution (422), it does not silently sail through on a stale check.
+- **`LegalHold.customerId`/`insuredPersonId` (2026-09-07 widening, migration
+  `20260916120000`) let a hold name ONE data subject structurally — at most one of the
+  two, validated the ConsentRecord/DSR way (`hasAtMostOneSubjectReference`, "at most" not
+  "exactly," since a hold naming neither is still the valid, pre-widening shape).
+  `LegalHoldRepository.hasActiveHoldForSubject()` is a NEW method this feeds —
+  `DsrService.fulfil()` (M04) calls it live before letting a DELETION request close as
+  fully fulfilled, closing an M04/M06 integration gap that was honest when M04 shipped (M06
+  didn't exist) but went stale once M06 landed with a real register nobody wired up. See
+  `data-subject-requests.md`'s own "not obvious" entry for the DSR side. This is
+  independent of, and does not change, `hasActiveHold(retentionScheduleItemId)` — the
+  CATEGORY-scoped check `DisposalBatchService` already used; a hold can name a category, a
+  subject, both, or neither.
 - **A `DisposalBatch` cannot reach `CLOSED` without a `CertificateOfDestruction`
   attached** (422 otherwise — the literal "no closing without a Certificate of Destruction"
   requirement), and `issueCertificate()` requires status EXECUTED or CLOSED (422 before
@@ -112,13 +132,16 @@ DisposalBatch
 
 - `packages/db/prisma/schema.prisma` — `RetentionScheduleItem` (search "PART 6.2"),
   `DisposalBatch`, `LegalHold`, `CertificateOfDestruction` models; migration
-  `20260914120000_add_retention_disposal_widening` for this build's widening.
-- `apps/api/src/modules/pdpl/retention-schedule.{config,service,controller}.ts` +
-  `apps/api/src/repositories/retention-schedule.repository.ts` — the schedule CRUD.
+  `20260914120000_add_retention_disposal_widening` for this build's widening,
+  `20260916120000_add_legal_hold_subject_reference` for `LegalHold.customerId`/
+  `insuredPersonId`.
 - `apps/api/src/modules/pdpl/legal-hold.{config,service,controller}.ts` +
   `apps/api/src/repositories/legal-hold.repository.ts` — place/review/release, the
-  `hasActiveHold()` exclusion check `DisposalBatchService` calls directly (same-module
-  injection, not a cross-module coupling violation).
+  `hasActiveHold()` CATEGORY exclusion check `DisposalBatchService` calls directly
+  (same-module injection), and the newer `hasActiveHoldForSubject()` SUBJECT check
+  `DsrService` (M04) calls the same way.
+- `apps/api/src/modules/pdpl/retention-schedule.{config,service,controller}.ts` +
+  `apps/api/src/repositories/retention-schedule.repository.ts` — the schedule CRUD.
 - `apps/api/src/modules/pdpl/disposal-batch.{config,service,controller}.ts` +
   `apps/api/src/repositories/disposal-batch.repository.ts` — the dual-control
   nominate→manager-approve→dpo-approve→execute→certificate→close workflow.

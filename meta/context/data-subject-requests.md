@@ -1,6 +1,7 @@
 # Data Subject Request Management (M04)
 
-**Last verified:** 2026-09-06 · **Owner:** DPO (role, not yet a named person)
+**Last verified:** 2026-09-07 (closed the M04/M06 Legal Hold live-check gap) · **Owner:**
+DPO (role, not yet a named person)
 
 **Re-verified 2026-09-06** against Part D §5.1's own DSR checklist text (pasted whole
 by the user as item #2 of Part D's 9-system checklist, worked one item at a time after
@@ -80,19 +81,32 @@ pre-existed (A.6/A.8 backlog infrastructure) — this module is their first real
   "Mandatory rules" summary already said "DSR closure" was covered, but the lex file's own
   table was silent on it; fixed alongside this file, a documentation gap the build itself
   surfaced, not a new rule.
-- **A DELETION request cannot be marked fully FULFILLED without an explicit staff
-  attestation that no retention hold applies** (`confirmNoOpenRetentionHold: true` on the
-  fulfil request) — Retention & Disposal (M06, `RetentionScheduleItem`/`LegalHold`) is not
-  built yet, so this is deliberately a staff attestation, not an automated check against
-  real retention data; an automated check today would always trivially pass, the exact
-  #48 `third_party_payment_source`-dormancy mistake this build was reasoned against
-  repeating (`meta/context/transaction-monitoring.md`). The attestation is **persisted**
+- **A DELETION request cannot be marked fully FULFILLED while an active Legal Hold names
+  this exact data subject — a REAL, live check, not just a staff attestation** (closed
+  2026-09-07, a meticulousness re-audit of Part D against the literal backlog text).
+  `fulfil()` now runs `LegalHoldRepository.hasActiveHoldForSubject({customerId,
+  insuredPersonId})` FIRST and 422s outright if it returns true — the
+  `confirmNoOpenRetentionHold` attestation cannot override this. **This closes a gap that
+  was honest when M04 first shipped but went stale**: at the time, Retention & Disposal
+  (M06) didn't exist yet — `RetentionScheduleItem`/`LegalHold` were in the schema but
+  nothing populated them, so an automated check would always trivially pass (the exact #48
+  `third_party_payment_source`-dormancy mistake this build was originally reasoned
+  against). M06 shipped in a LATER session with a real, queryable `LegalHold` register, but
+  nobody went back to wire the two together — the DTO's own header comment kept saying "M06
+  is not built yet" long after it was. Closing it required a real schema widening (`LegalHold`
+  gained optional `customerId`/`insuredPersonId` columns, migration `20260916120000` — see
+  `data-retention-and-disposal.md`), since `LegalHold.scope` is free text with no structured
+  subject reference. **The `confirmNoOpenRetentionHold` attestation still gates the
+  remaining case the live check cannot cover**: a record category whose
+  `RetentionScheduleItem.retentionPeriodMonths` has not yet elapsed has no per-subject
+  "hold" row to find — that stays a staff attestation, deliberately kept a LIVE, enforced
+  gate (the #48 lesson still applies to THAT half). The attestation is **persisted**
   (`noOpenRetentionHoldConfirmedAt`, stamped in the same write as `processedByUserId`) and
   carried into the UPDATE audit snapshot — a `@code-reviewer` MAJOR on the first pass
   validated the flag in memory and then discarded it, leaving no record of which DPO
-  officer attested it. If a retention hold DOES apply, use `partially-fulfil` instead —
-  the request's status stays `PARTIALLY_FULFILLED` permanently; there is no path back to
-  `FULFILLED` for a DELETION once a hold has been recorded.
+  officer attested it. If either check blocks it, use `partially-fulfil` instead — the
+  request's status stays `PARTIALLY_FULFILLED` permanently; there is no path back to
+  `FULFILLED` for a DELETION once either a hold or a justification has been recorded.
 - **The one +15-business-day extension is ACCESS-only**, additive to the *existing*
   `slaDueAt` (not restarted from `now()`), and write-once
   (`accessExtensionAppliedAt IS NULL` in the repository guard, re-asserted alongside
@@ -155,6 +169,11 @@ pre-existed (A.6/A.8 backlog infrastructure) — this module is their first real
   `dto/`.
 - `apps/api/src/repositories/dsr.repository.ts` — owns the writes, including the two
   status-conditional guards (`recordHandlerAssignment`, `applyExtension`).
+- `apps/api/src/repositories/legal-hold.repository.ts` —
+  `hasActiveHoldForSubject({customerId, insuredPersonId})`, the live check `DsrService.
+  fulfil()` now calls (`DsrService` injects `LegalHoldRepository` directly — same-module
+  injection, both live in `PdplModule`, no new wiring needed). See
+  `data-retention-and-disposal.md` for the `LegalHold` schema widening this depends on.
 - `apps/api/src/modules/sla/sla-timer.service.ts` — `ResolveSlaTimerParams.createdBefore`,
   added for this module's extension re-basing (see "not obvious" above).
 - `apps/api/src/modules/sla/sla-registry.config.ts` — `dsr_access_deletion` /
