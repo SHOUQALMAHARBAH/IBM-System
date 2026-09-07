@@ -1,6 +1,6 @@
 # Part E — Dashboards & Management Reporting (Part 13)
 
-**Last verified:** 2026-09-07 (Financial Dashboard added) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
+**Last verified:** 2026-09-07 (Compliance Dashboard added) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
 
 ## What this is
 
@@ -342,12 +342,105 @@ differ from #40's, unlike Notices' two identical-need callers.
 
 No migration, no new permission.
 
+## Compliance Dashboard
+
+Bullet text: "KYC status (approved/pending/overdue for refresh), complaints
+by status/category, compliance breaches/exceptions, regulatory filing/
+report status, open DSRs, breach-register status, DPIA backlog." The fifth
+of the six named dashboards — the sixth (Insurer & Employee Performance)
+is already built (backlog #60/#61), leaving only its verification pass.
+
+**Seven sections, each reading a different existing table directly — the
+DPO Workspace "aggregate several registers on one screen, zero cross-module
+SERVICE dependency" shape**, reused here for the Compliance Officer's own
+audience instead of the DPO's. Real overlap with DPO Workspace is expected,
+not a bug: DSRs, DPIA, and the breach register legitimately serve both
+audiences.
+
+**No period range at all, one step further than Claims/Financial's own
+`asOf` compromise.** Claims/Financial's `asOf` worked because a simple
+`createdAt` cutoff reasonably approximates "state as of a past date" for
+those tables. It would not here: `KYCRecord.status` moves through 7 states
+over a customer's life, `Complaint.status` through 6 — filtering by
+`createdAt < asOf` while still reading the CURRENT status column would
+misrepresent "status as of that date" far more than Claims Dashboard's own
+documented limitation already accepted. Genuine point-in-time reconstruction
+would mean walking a status-history table per entity, and only `Claim` has
+one (`ClaimStatusHistory`) — `Complaint`/`KYCRecord`/`DataSubjectRequest`/
+`IncidentReport` don't. Disproportionate for a compliance rollup screen.
+Deliberately omitted.
+
+**`branchId` is the ONE cross-cutting filter with genuine multi-section
+reach — `insuranceLine`/`insurerId` are omitted dashboard-wide**, unlike
+every prior Part E dashboard. Checked all seven underlying models directly:
+`KYCRecord`/`Complaint`/`DataSubjectRequest`/`TransactionMonitoringAlert`
+each tie (optionally, for the latter two) to a `Customer` with an
+`ownerUserId`, so `branchId` scopes those four. `ComplianceCalendarItem.
+ownerUserId` names the COMPLIANCE STAFF member tracking an obligation, not
+a Sales Officer — no branch concept applies. `IncidentReport` and
+`DpiaScreening` carry no `Customer`/owner relation at all. None of the
+seven ties to a `Policy` at all, so `insuranceLine`/`insurerId` have no
+genuine dimension anywhere on this dashboard — a dimension can fail to
+apply to an ENTIRE dashboard, not just to some of its metrics.
+
+**"Compliance breaches/exceptions" needed a genuinely drafted
+interpretation — the backlog names no model.** `breach-register status`
+(its own separate clause) unambiguously means `IncidentReport` (confirmed
+by grepping the schema for every use of "breach"). The only other real
+"exception" concept in the schema, `ReconciliationException` (#39), is
+FINANCE-owned (`reconciliation-exception.*` grants `[FINANCE, MANAGER]`,
+no `COMPLIANCE_OFFICER`) — not genuinely Compliance's own. `Transaction
+MonitoringAlert` (#48, AML/CFT) IS Compliance-owned (`aml.monitor` grants
+`[COMPLIANCE_OFFICER]` only) and cheap to query — used here. Internal
+Controls' own self-approval findings were a plausible second candidate,
+but `InternalControlsService.runSelfApprovalAudit()` is an expensive
+16-query LIVE scan by its own doc comment — re-running it inline on every
+dashboard load would be disproportionate. Instead this reads the MOST
+RECENT already-persisted `InternalControlsAuditReport` READ audit row (via
+`AuditTrailRepository.findAuditLog`, reused directly, no re-scan) for a
+"last known" violation count — `null` if the audit has never run. So
+"compliance breaches/exceptions" here means: open AML/CFT alerts (by
+pattern type) + the most recent self-approval scan's violation count.
+
+**KYC's own "overdue for refresh" bucket already exists as a real,
+transitioned-into status** — `KycStatus.PERIODIC_REVIEW_DUE`, driven live
+by the pre-existing `kyc-periodic-review.scheduler.ts` off
+`KYCRecord.nextReviewDueAt`. No derivation needed; a plain `groupBy`
+`status` breakdown already carries it.
+
+**"Open DSRs" and breach-register "open" both reuse the Claims Dashboard's
+own "`CLOSED` is the sole terminal status" rule** — confirmed via
+`WORKFLOW_TRANSITIONS.DataSubjectRequest`/`.IncidentReport`, both reachable
+only through a `CLOSED` terminus. "DPIA backlog" = screenings with
+`outcome IN (DPO_REVIEW_REQUIRED, ESCALATED_FULL_DPIA) AND dpoReviewedAt IS
+NULL` — a dedicated count query, since the outcome `groupBy` alone can't
+express "still unreviewed." "Regulatory filing/report status" reuses #51's
+own `deriveComplianceCalendarItemView` pure function directly (the
+Claims/Financial Dashboard "reuse a pure function, don't re-derive"
+precedent) rather than re-deriving the overdue rule.
+
+### Where the code lives (Compliance Dashboard)
+
+- `apps/api/src/modules/management-reporting/compliance-dashboard.
+  {config,service,controller,module}.ts` +
+  `repositories/compliance-dashboard.repository.ts` (just
+  `findUserIdsInBranch` plus seven read methods on its own tables —
+  `AuditTrailRepository` is reused directly for the self-approval scan
+  lookup, the #63/Claims/Financial "share the repository, not the service"
+  shape, independently re-provided in `ComplianceDashboardModule`'s own
+  `providers`, zero wiring to `AuditTrailModule`).
+- `apps/web/app/(app)/dashboards/compliance/page.tsx` +
+  `lib/management-reporting/compliance-dashboard-api.ts`.
+
+No migration, no new permission, no widening of any existing repository —
+unlike Financial Dashboard, every table this dashboard reads already
+supported everything it needed.
+
 ## Out of scope for this file
 
-The Compliance Dashboard and the Insurer & Employee Performance
-verification — each a separate pass, to be added to this same file as they
-land (the `data-retention-and-disposal.md` "grow one file per completed
-sub-system" shape, since all six are one backlog item, Process #64). The
-`dashboard.executive.view` cross-department rollup screen itself — not yet
-built. `#59`'s own `SalesTarget` quota-tracking design —
-`ibms-brain/meta/context/sales-performance.md`.
+The Insurer & Employee Performance verification — a separate pass, to be
+added to this same file when it lands (the `data-retention-and-disposal.md`
+"grow one file per completed sub-system" shape, since all six are one
+backlog item, Process #64). The `dashboard.executive.view` cross-department
+rollup screen itself — not yet built. `#59`'s own `SalesTarget`
+quota-tracking design — `ibms-brain/meta/context/sales-performance.md`.
