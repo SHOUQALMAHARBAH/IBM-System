@@ -1,6 +1,6 @@
 # Part E — Dashboards & Management Reporting (Part 13)
 
-**Last verified:** 2026-09-07 (Policy Dashboard added) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
+**Last verified:** 2026-09-07 (Claims Dashboard added) · **Owner:** Branch/Department Manager, Executive Management (roles, not yet named people)
 
 ## What this is
 
@@ -159,12 +159,112 @@ audit snapshots use.
 No migration, no new permission, no cross-module service dependency (reads
 `Policy`/`Endorsement`/`Cancellation` directly).
 
+## Claims Dashboard
+
+Bullet text: "open vs. closed claims, outstanding claims value, claims
+ageing, loss ratio by client/line/insurer." A NEW endpoint, `GET
+/dashboards/claims`, gated by the already-pre-seeded `dashboard.claims.view`
+(its first real consumer, same shape as Policy Dashboard's own
+`dashboard.policy.view`).
+
+**Every one of this bullet's four metrics is a CURRENT-STATE noun, not a
+period-scoped event** — unlike Sales/Policy Dashboards, there is no "claims
+opened this period" phrasing anywhere. So Claims Dashboard carries NO
+`periodStart`/`periodEnd` range at all; every metric is a live snapshot.
+Part E's own cross-cutting rule still demands "filterable by... time
+period," so a single `asOf` REFERENCE-DATE override is exposed instead of a
+range (the #33 AR ageing report's own shape) — the honest reading of "time
+period" for a dashboard whose every metric is a point-in-time snapshot
+rather than a range-scoped count. `asOf` narrows which claims are
+considered (`createdAt < asOf-exclusive-upper-bound`) but classifies each by
+its CURRENT `Claim.status`, not the status it held as of that date — a
+documented limitation (full reconstruction would need to walk
+`ClaimStatusHistory`), the same shape as the AR ageing report's own "a
+receipt means paid in full" simplification.
+
+**"Open vs. closed"**: `CLOSED` is the ONLY terminal `ClaimStatus`
+(`WORKFLOW_TRANSITIONS.Claim` — reachable only via `DECLINED -> CLOSED` or
+`SETTLED -> CLOSED`), so "open" is simply "status != CLOSED."
+
+**"Outstanding claims value"** sums, over every OPEN claim, the more precise
+figure once known: `Settlement.netSettlement` when a settlement already
+exists (a claim can be `SETTLED` but not yet `CLOSED`), else
+`Claim.estimatedLoss` — the same "netSettlement is the ground truth once
+available" precedent `computeLossRatio` itself uses for `periodClaims`.
+
+**"Claims ageing"** buckets each open claim by whole days between
+`Claim.createdAt` (the NOTIFIED moment) and `asOf`. Unlike
+`AR_AGEING_BUCKET_KEYS` (which has a `current`/"not yet due" bucket), an
+open claim starts ageing from day zero, so the new `CLAIMS_AGEING_BUCKET_
+KEYS` begin at `d0_30` (then `d31_60`/`d61_90`/`d90_plus`) — the same 30/60/
+90 boundary spirit, adapted since there is no "not yet due" state for an
+already-open claim.
+
+**"Loss ratio by client/line/insurer" needed a genuine schema-adjacent
+widening**: Process 30's own `LOSS_RATIO_GROUP_BY` only carried `['customer',
+'policy', 'line']` — no insurer dimension. Widened it to add `'insurer'`
+(and `AnalyticsPolicyLike`/`AnalyticsPolicyRow` to carry `insurerId`/
+`insurerName`) rather than writing a Claims-Dashboard-local copy, since a
+groupBy union is exactly the kind of thing meant to grow. **This is a real,
+free capability upgrade to the pre-existing `GET /claims-analytics/
+loss-ratio?groupBy=` endpoint too** — its DTO validates against the same
+constant, so `groupBy=insurer` now works there as well, with zero code
+changes to that controller/service. The three breakdowns (`lossRatioByClient
+`/`lossRatioByLine`/`lossRatioByInsurer`) are the SAME pre-existing, all-time
+`buildLossRatioBreakdown` pure function called three times over one fetched
+policy set — the #62 Portfolio Analysis "several breakdowns in one response"
+shape. Reused via a direct import of a PURE function — one step lighter than
+#63 Profitability Analysis's own repository-injection precedent (no DI
+wiring at all needed for a pure function). `computeLossRatio`'s own
+documented "all-time" scope is untouched, so `asOf` never affects it.
+
+**`LossRatioRepository` is reused the #63 way**: `ClaimsDashboardModule`
+provides its own `LossRatioRepository` instance directly (`imports: []`, no
+`LossRatioModule` wiring) — the same class independently instantiated in two
+modules' own `providers` arrays, both wrapping the singleton `PrismaService`,
+exactly like `ProfitabilityPolicyRepository` is shared between
+`FinanceModule` and `ProfitabilityAnalysisModule`.
+
+Filter applicability: `branchId` (-> `Policy.placedByUserId` via the `Claim
+-> Policy` relation), `insuranceLine`, and `insurerId` all scope every
+metric uniformly — every one of this dashboard's reads ultimately goes
+through a `Claim`'s owning `Policy`, so (like Policy Dashboard, unlike Sales
+Dashboard) there is no per-metric carve-out to document.
+
+Audited as a sensitive READ (`isSensitiveDataAccess: true` unconditionally,
+since `Claim` is HIGHLY_CONFIDENTIAL by default) — the snapshot records
+counts only, never `Cancellation`-style free text (there is none on this
+dashboard) nor individual claim references.
+
+**Test-isolation note**: unlike Sales/Policy Dashboards (isolated by a
+distinctive historical PERIOD window), Claims Dashboard's own `createdAt <
+asOf` scope has NO lower bound, so a date window alone cannot isolate one
+e2e test's figures from `db-test`'s cumulative history. Its own e2e spec
+isolates instead via a freshly-created, uniquely-named `Insurer` row and the
+`insurerId` filter — every fixture claim is placed through a policy with
+that insurer, so filtering the dashboard read by that same `insurerId`
+returns exactly (and only) that test's own rows, safe for exact-equality
+assertions.
+
+### Where the code lives (Claims Dashboard)
+
+- `apps/api/src/modules/management-reporting/claims-dashboard.
+  {config,service,controller,module}.ts` +
+  `repositories/claims-dashboard.repository.ts`.
+- Widened: `modules/loss-ratio/loss-ratio.config.ts` (`LOSS_RATIO_GROUP_BY`
+  + `AnalyticsPolicyLike`) and `repositories/loss-ratio.repository.ts`
+  (`AnalyticsPolicyRow` + `loadPoliciesForAnalytics` scope).
+- `apps/web/app/(app)/dashboards/claims/page.tsx` +
+  `lib/management-reporting/claims-dashboard-api.ts`.
+
+No migration, no new permission.
+
 ## Out of scope for this file
 
-Claims/Financial/Compliance dashboards and the Insurer & Employee
-Performance verification — each a separate pass, to be added to this same
-file as they land (the `data-retention-and-disposal.md` "grow one file per
-completed sub-system" shape, since all six are one backlog item, Process
-#64). The `dashboard.executive.view` cross-department rollup screen itself
-— not yet built. `#59`'s own `SalesTarget` quota-tracking design —
+Financial/Compliance dashboards and the Insurer & Employee Performance
+verification — each a separate pass, to be added to this same file as they
+land (the `data-retention-and-disposal.md` "grow one file per completed
+sub-system" shape, since all six are one backlog item, Process #64). The
+`dashboard.executive.view` cross-department rollup screen itself — not yet
+built. `#59`'s own `SalesTarget` quota-tracking design —
 `ibms-brain/meta/context/sales-performance.md`.
