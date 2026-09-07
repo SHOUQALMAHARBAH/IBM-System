@@ -1,12 +1,12 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-07 (item #5 — locale-aware number/date formatting —
-PARTIALLY built: number/date formatting only (sub-problem #1 of 3), by
-explicit user scoping decision; Hijri calendar and multi-currency
-(reinsurance) deferred — after item #4 — Arabic-first input (partial), item
-#3 — bidi text handling, item #2 — full RTL layout, and item #1 — instant
-language switch) · **Owner:** none named; cross-cutting, applies to every
-screen.
+**Last verified:** 2026-09-07 (item #4 — Arabic-first input — CLOSED: Arabic
+keyboards confirmed clear + Jordanian national-ID-convention name-splitting
+built for Customer/Employee/UltimateBeneficialOwner; `InsuredPerson`
+deliberately excluded, it has zero CRUD anywhere yet — after item #5 —
+locale-aware number/date formatting (partial), item #3 — bidi text
+handling, item #2 — full RTL layout, and item #1 — instant language
+switch) · **Owner:** none named; cross-cutting, applies to every screen.
 
 ## What this is
 
@@ -24,13 +24,16 @@ single module:
    CONTENT-level bidi display of two whole, separate fields, not the
    mixed-content-in-one-field case this item actually names.
 4. Arabic-first input (Arabic keyboards, national-ID-convention name fields, correct
-   Arabic sorting) — **PARTIALLY built, this entry: correct Arabic sorting only.**
-   Arabic keyboards and national-ID-convention name fields are explicitly deferred
-   as future work (see "What item #4 covers/does NOT cover" below) — a user
-   scoping decision, not an oversight: this bullet bundles three sub-problems of
-   very different size, and the other two (a real schema migration splitting every
-   name field into parts; ensuring no input validation regex blocks Arabic
-   characters) were deliberately not attempted in this pass.
+   Arabic sorting) — **CLOSED, this entry.** All three sub-problems are now
+   addressed: Arabic sorting (built earlier — `'ar'` locale collation); Arabic
+   keyboards (verified CLEAR — no code change needed, see "What item #4 covers"
+   below); national-ID-convention name fields (built — a real schema migration
+   splitting `Customer`/`Employee`/`UltimateBeneficialOwner` names into the
+   Jordanian given/father's/grandfather's/family-name convention).
+   `InsuredPerson` (the 4th model with a national ID field) is the one
+   deliberate exception — it has zero CRUD anywhere in this app yet, so
+   splitting its name now would be schema-only busywork; revisit once its CRUD
+   exists (see "What item #4 does NOT cover" below).
 5. Locale-aware number/date/currency formatting (Gregorian + optional Hijri, JOD base +
    multi-currency for reinsurance) — **PARTIALLY built, this entry: number/date
    formatting only.** Hijri calendar and multi-currency (reinsurance) support are
@@ -49,9 +52,10 @@ single module:
    verification DISCIPLINE overlay on 1-7, not a separate build item.
 
 Worked one item at a time, the Part D/E pacing convention — this file now covers
-items #1-5 (items #4-5 each PARTIAL, by explicit user scoping decisions). Items
-#6-8 are unbuilt; do not assume they are covered by any earlier item's own
-infrastructure without checking each item's own "does NOT cover" section below.
+items #1-5 (item #4 CLOSED with one narrow, documented exception; item #5
+PARTIAL, by explicit user scoping decision). Items #6-8 are unbuilt; do not
+assume they are covered by any earlier item's own infrastructure without
+checking each item's own "does NOT cover" section below.
 
 ## What item #1 covers
 
@@ -248,12 +252,14 @@ files:
   line labels, free-text descriptions, reference numbers shown adjacent to
   those). Pure numeric/enum/id fields were deliberately left untouched.
 
-## What item #4 covers (PARTIAL — a deliberate user scoping decision)
+## What item #4 covers (CLOSED — all three sub-problems addressed)
 
 Item #4's own bullet bundles three sub-problems of very different size.
-Presented with that ahead of implementation, the user explicitly chose:
-**fix Arabic sorting only; skip name-splitting; defer both name-splitting
-and Arabic keyboards as documented future work.**
+This entry closes all three: Arabic sorting was built first (see below);
+Arabic keyboards were investigated and confirmed clear (no code change
+needed); national-ID-convention name-splitting was scoped with the user via
+`AskUserQuestion` (which models, and whether to keep the flat display field
+as computed) and then built as a real, if narrow, schema migration.
 
 - **Correct Arabic sorting**: every `localeCompare(x, 'en')` call sorting a
   genuinely bilingual name/label field switched to `localeCompare(x, 'ar')`
@@ -283,31 +289,71 @@ and Arabic keyboards as documented future work.**
   under `'en'` (verified directly against Node's ICU, not assumed) — a real
   divergence, not an artificial fixture, locked in as a regression test in
   `finance.config.spec.ts`.
+- **Arabic keyboards — confirmed CLEAR, no code change needed.** The one
+  keyboard-adjacent risk flagged (but not checked) when Arabic sorting
+  shipped was finally investigated: grepped all 67 `@Matches` validators
+  across every api DTO — none restrict any name field to Latin-only
+  characters (all are money/date/score/account-number/currency-code
+  patterns); grepped every web `pattern=` attribute — only 3 exist, all on
+  6-digit MFA code inputs, unrelated to names; `@Length`/`@MinLength` on
+  name fields count JS string length correctly for Arabic script (no
+  surrogate-pair miscount, since Arabic sits in the Basic Multilingual
+  Plane). Nothing in this codebase blocks or miscounts Arabic input
+  anywhere — a real finding, not an assumption, closing this sub-problem
+  with no code change.
+- **National-ID-convention name-splitting — built.** The Jordanian
+  convention (given name + father's name + grandfather's name + family
+  name, the four parts on a Jordanian national ID card) is now a real
+  schema migration on the 3 models that have BOTH a genuine CRUD surface
+  AND an existing `nationalIdEnc` field to verify a split name against:
+  `Customer` (`INDIVIDUAL` type only — `CORPORATE.legalName` is a company
+  name, untouched), `Employee`, `UltimateBeneficialOwner`. Each gained 4
+  new nullable columns (`givenName`, `fatherName`, `grandfatherName`,
+  `familyName`) via migration
+  `20260917120000_add_national_id_name_parts`; the existing flat field
+  (`Customer.legalName`/`Employee.fullName`/`UltimateBeneficialOwner.
+  fullName`) stays as a computed/denormalized display string, auto-joined
+  server-side from the 4 parts by one new shared helper,
+  `apps/api/src/common/person-name.util.ts`'s `composeFullName()` — so
+  every existing consumer (Arabic sorting above, `<bdi>` display, search,
+  audit logs, exports) keeps working unchanged against the same field
+  name. `givenName`/`familyName` are required whenever the split applies
+  (the two universally-present anchors of a name); `fatherName`/
+  `grandfatherName` are optional — a judgment call made in the absence of
+  any stricter sourced rule, flagged to the user rather than silently
+  assumed. No backfill: historical rows keep only their flat name with all
+  4 parts NULL — inventing a split for text no one actually entered that
+  way would be fabricating data.
+- **`InsuredPerson` deliberately excluded** — the 4th model with a
+  `nationalIdEnc` field, but confirmed via grep to have ZERO CRUD anywhere
+  in this app (no controller/service/repository ever creates or updates
+  one) — splitting its name now would be schema-only busywork with nothing
+  to exercise it. Revisit once its CRUD exists (a separate, pre-existing
+  gap already documented in `meta/context/consent-management.md`).
+- **`'ar'` is HARDCODED for sorting, not the calling user's own language
+  preference** — a second explicit user scoping decision from when sorting
+  was built (asked directly, confirmed). Name-splitting, by contrast, is
+  NOT locale-hardcoded — it threads real user input through, the same as
+  any other captured field.
 
-## What item #4 does NOT cover (read before assuming otherwise — explicitly deferred future work)
+## What item #4 does NOT cover (read before assuming otherwise)
 
-- **Arabic keyboards** — out of scope by user decision. Only partially
-  investigated: confirmed no DTO validation regex was checked for
-  Latin-only patterns that might reject Arabic characters on a name field —
-  this specific check (the one keyboard-adjacent risk cheap enough to fold
-  in) was flagged during scoping but NOT actually done in this pass. A
-  future session should grep every name/address DTO for a `@Matches`
-  pattern before assuming Arabic input is unblocked everywhere.
-- **National-ID-convention name fields** — out of scope by user decision.
-  Every name field in the schema (`Customer.legalName`, `Prospect.
-  companyName`, `Employee.fullName`, `Adjuster.name`, etc.) remains a single
-  flat string; none are split into the Jordanian convention (given name +
-  father's name + grandfather's name + family name). As written, the
-  backlog bullet reads as a real schema migration (a new set of structured
-  columns) touching every form and consumer of these fields — a
-  substantially larger, more invasive change than the sorting fix, and
-  genuinely undocumented anywhere in this brain beyond the one-line bullet
-  (no field list, no definition of the convention, no design doc). Future
-  work: define the convention's exact field breakdown with the user first,
-  then scope the migration.
-- **Caller-aware locale** — `'ar'` is hardcoded everywhere per this item's
-  own scoping decision (see above); no code reads `languagePreference` to
-  pick a sort locale dynamically.
+- **`InsuredPerson` name-splitting** — deliberately excluded, see above;
+  revisit once `InsuredPerson` CRUD exists.
+- **Caller-aware sort locale** — `'ar'` is hardcoded for the Arabic-sorting
+  sub-problem specifically (see above); no code reads `languagePreference`
+  to pick a sort locale dynamically. This is UNRELATED to name-splitting,
+  which is not locale-gated at all.
+- **Editing an existing name** — no `update-*.dto.ts` exists for `Customer`/
+  `Employee`/`UltimateBeneficialOwner` names today (confirmed by grep before
+  starting), so this item only touches CREATE paths; an edit form was never
+  in scope to begin with, not a gap this item introduced.
+- **A dedicated on-screen Arabic virtual keyboard widget** — "Arabic
+  keyboards" was interpreted as "does the app block or mis-handle Arabic
+  input," per the backlog bullet's own framing (grouped with a Latin-only
+  regex risk and name-field length limits, not with an IME/virtual-keyboard
+  feature) — confirmed clear above. Building an actual on-screen keyboard
+  widget was never implied by that framing and was not built.
 
 ## What item #5 covers (PARTIAL — a deliberate user scoping decision)
 
@@ -460,7 +506,8 @@ deferred future work.**
   held both); a mixed-content capture input (`vendors` create form) carries
   `dir="auto"`.
 
-**Item #4 (partial)** — api-only, no web files, no migration, no new permission:
+**Item #4 — Arabic sorting** (built earlier this session) — api-only, no web
+files, no migration, no new permission:
 
 - `apps/api/src/modules/finance/finance.config.ts` — 4 `localeCompare`
   tie-breakers (customer legal name, insurer name ×2, insurance-line/segment
@@ -483,6 +530,93 @@ deferred future work.**
   the mechanism empirically: `"إبراهيم للتأمين"` sorts before `"أحمد
   للتجارة"` under `'ar'` but after it under `'en'` (verified directly
   against Node's ICU before writing the assertion, not assumed).
+
+**Item #4 remainder — Arabic keyboards (verified clear) + national-ID-convention
+name-splitting** (this entry) — schema migration + api + web, no new permission:
+
+- `packages/db/prisma/schema.prisma` — 4 new nullable `String?` columns
+  (`givenName`, `fatherName`, `grandfatherName`, `familyName`) on
+  `Customer`, `Employee`, `UltimateBeneficialOwner`.
+  `packages/db/prisma/migrations/20260917120000_add_national_id_name_parts/
+  migration.sql` — new, hand-authored (see the note below on why).
+- `apps/api/src/common/person-name.util.ts` — new. `composeFullName()`,
+  the one shared join used identically by all 3 services.
+  `person-name.util.spec.ts` — 5 new unit tests.
+- `apps/api/src/modules/customer/dto/create-customer.dto.ts` — `legalName`
+  now `@ValidateIf(CORPORATE)` (was unconditionally required); new
+  `givenName`/`familyName` (required-if-`INDIVIDUAL`) and `fatherName`/
+  `grandfatherName` (optional); `CustomerTypeFieldCoherence` extended to
+  reject the 4 new fields on a CORPORATE submission and `legalName` on an
+  INDIVIDUAL one, the same mutual-exclusion rigor it already enforced for
+  `nationalId`/`registrationNumber`.
+  `apps/api/src/modules/customer/dto/create-ubo.dto.ts` — `fullName`
+  replaced with the 4 parts (UBO is always an individual, no branching
+  needed).
+  `apps/api/src/modules/supporting-operations/dto/create-employee.dto.ts` —
+  same replacement as UBO.
+- `apps/api/src/modules/customer/customer.service.ts` — `create()`/
+  `addUbo()` compute `legalName`/`fullName` via `composeFullName()`;
+  `MaskedCustomer`'s explicit field list (built via `Omit<Customer,...>`,
+  so the 4 new fields flow through automatically) and its 2 hand-built
+  call sites (`toMasked()`, `list()`'s per-row map) updated;
+  `toMaskedUbo()` needed NO change — it spreads `{...rest}` from the raw
+  UBO row, so the new fields already flowed through.
+  `apps/api/src/modules/supporting-operations/employee.service.ts` —
+  `create()` computes `fullName`.
+  `apps/api/src/modules/supporting-operations/employee.config.ts` — the 4
+  fields added to `MaskedEmployee`/`EmployeeListRow` and their 2 builder
+  functions (this module, unlike Customer's, hand-builds every response
+  shape explicitly).
+- `apps/api/src/repositories/customer.repository.ts` /
+  `apps/api/src/repositories/employee.repository.ts` — the 4 new optional
+  fields added to `CreateCustomerInput`/`CreateUboInput`/
+  `CreateEmployeeInput`; no other repository logic changed, since all 3
+  `create()` methods already pass their input straight into `prisma.
+  client.<model>.create({ data: input })`.
+- `apps/web/lib/customer/customer-api.ts` / `apps/web/lib/supporting-
+  operations/employee-api.ts` — the 4 fields added to every response/input
+  type; `legalName`/`fullName` became optional on the create-input types
+  (required only for CORPORATE/never-accepted-directly, respectively).
+- `apps/web/components/customer/CustomerOnboardingWizard.tsx` — the
+  profile step's INDIVIDUAL branch and the UBO mini-form each replaced
+  their single name input with 4 (`dir="auto"` on each, matching every
+  other mixed-script input in this file); the review step switched from a
+  local `legalName` state (which no longer represents an individual's name
+  after the split) to `customer.legalName` (the server-computed value,
+  already available and never masked either way).
+- `apps/web/app/(app)/employees/page.tsx` / `employees/[id]/page.tsx` /
+  `apps/web/app/(app)/customers/[id]/page.tsx` — the same 4-input
+  create-form treatment; 4 new read-only display rows for the split parts
+  (a KYC reviewer needs to see them separately to verify against a
+  physical/scanned national ID, not just have them stored); 3 genuine
+  pre-existing item #3 (`<bdi>`) gaps found and fixed while reading these
+  exact files — `employees/page.tsx`'s list-table name cell,
+  `employees/[id]/page.tsx`'s detail heading, and `customers/[id]/page.tsx`'s
+  UBO list row, none of which had been wrapped in `<bdi>` despite being
+  genuinely bilingual name fields.
+- **A hand-authored migration, not `prisma migrate dev`-generated**: this
+  repo's dev/test Postgres containers have a known, pre-existing checksum
+  drift on 3 unrelated already-applied migrations (documented in this
+  session's own memory as a recurring gotcha) that makes `migrate dev`
+  refuse to run without a full `migrate reset` (which would drop all local
+  data) — worked around the same non-destructive way as before: hand-write
+  the migration SQL, apply it directly via `docker exec ... psql -f
+  /dev/stdin`, then `prisma migrate resolve --applied` to register it
+  without a shadow-database diff. Confirmed via `prisma migrate status`
+  ("Database schema is up to date!") on both `db` and `db-test` afterward.
+- **Every existing e2e fixture that POSTs to `/customers`, `/customers/:id/
+  ubos`, or `/employees` with a `legalName`/`fullName` literal updated for
+  the new contract** — `customer.e2e-spec.ts`'s own `createIndividualCustomer()`
+  helper (and `employee.e2e-spec.ts`'s new local `splitName()`) split a
+  single display-name string on its first space into givenName/familyName,
+  so `composeFullName()` rejoins it back to the BYTE-IDENTICAL original
+  string — every existing assertion (including the EDD watchlist-match
+  test's exact-string match against a sample sanctioned name) keeps passing
+  unchanged. 6 other e2e files that create a Customer purely as setup data
+  for an unrelated feature (`crm`, `cross-sell`, `insurance-program`,
+  `needs-assessment`, `risk-profile`, `up-sell`) needed the same fix — none
+  of them assert on the resulting `legalName`, confirmed by grep before
+  changing them.
 
 **Item #5 (partial)** — web-only, no backend files, no migration, no new
 permission:
@@ -603,7 +737,7 @@ item #2's own Claims-consent-widget fix hit once already ("a leftover
 port-3000 server from before my edit") — worth checking `.next/`'s build
 recency, not just the source diff, before trusting an e2e failure.
 
-## Verification — item #4 (partial)
+## Verification — item #4, Arabic sorting (built earlier this session)
 
 Pure api change (no web files touched, confirmed via `git diff --stat`) — no
 Playwright/a11y gate applies. +1 new unit test (`finance.config.spec.ts`,
@@ -619,6 +753,45 @@ broken (confirmed by reading each assertion before relying on a green run,
 not just trusting the exit code) — the one existing tie-break test in
 `finance.config.spec.ts` uses ASCII-only fixture names, unaffected either
 way. `npm run typecheck`/`lint`/`test` (api) OK.
+
+## Verification — item #4 remainder, Arabic keyboards (verified clear) + name-splitting (this entry)
+
+Touches `packages/db` (1 migration), `apps/api`, and `apps/web` — the first
+Part F item since #1 to touch all three, confirmed via `git diff --stat`
+before closing out. +5 new unit tests (`person-name.util.spec.ts`) → api
+unit **2326/2326** (from 2321). Every existing unit-test fixture
+constructing a raw `Customer`/`Employee`/`UltimateBeneficialOwner` Prisma
+object literal needed the 4 new fields added to compile (Prisma's generated
+types require a nullable column's key present as `null`, not merely
+omittable) — the expected ripple this session's own `LegalHold`
+precedent predicted, not a surprise. Full 62-file api e2e suite: **293/293**
+(292 green + 1 transient MFA/TOTP-timing flake in `employee.e2e-spec.ts`'s
+shared `makeUser()` setup helper — unrelated to this item's own logic,
+re-confirmed clean in isolation, `--testTimeout=180000` per this suite's
+own established chronic-flake precedent). `npm run typecheck`/`lint`/`test`
+(api) OK.
+
+Web: `npm run typecheck`/`lint`/`build`/`test` OK — web unit stays
+**16/16** (no new web unit test for this item; the web-side change is
+forms/display, verified via Playwright, this codebase's established split).
+Fixed 2 existing Playwright specs whose accessible-name queries depended on
+the now-replaced single name input (`customers.spec.ts`'s
+`getByLabel("Full name")` → `getByLabel("Given name")` +
+`getByLabel("Family name")`) and updated both files' fixture objects to
+carry the 4 new fields. Full web suite: **228/228** non-`@a11y` (224 +
+4 tests that flaked once under full-suite parallel load, all 4
+re-confirmed clean in isolation — the same transient-flake class this
+session has hit before, not a regression) + **66/66** `@a11y`.
+
+**A real migration-tooling blocker, not a code problem**: Docker Desktop's
+engine was unresponsive (500s from its own API) for a large stretch of this
+session — root-caused by checking its own log
+(`com.docker.backend.exe.log`), which showed a background software update
+in progress, and confirmed via `Get-Process` that the actual backend
+process had NOT restarted despite an apparent app relaunch (same PID,
+3-day-old start time) until the user did a full quit from the system tray.
+Once genuinely restarted, both `db` and `db-test` came up healthy and the
+migration applied cleanly.
 
 ## Verification — item #5 (partial)
 
@@ -640,17 +813,17 @@ and the choice itself was confirmed with the user directly via
 
 ## Next
 
-Item #4 remains PARTIALLY complete — Arabic sorting only, by explicit user
-scoping decision; Arabic keyboards and national-ID-convention name fields
-remain open, documented future work (see "What item #4 does NOT cover"
-above). Item #5 is now also PARTIALLY complete — number/date formatting
-only; Hijri calendar and multi-currency (reinsurance) remain open,
-documented future work (see "What item #5 does NOT cover" above). Do not
-assume a future session can mark either item fully closed without
-addressing its own deferred scope. Wait for the user's explicit go-ahead
-before resuming item #4's or item #5's remaining scope, starting item #6
-(bilingual full-text search), or any other Part F item — do not self-select.
-Items #6-7 each look like their own multi-session effort (item #7 in
-particular has no document-generation infrastructure to build on at all
-yet); item #8 (the 4-state screenshot discipline) is a verification overlay
-on whichever of #6-7 land, not a standalone build.
+**Item #4 is now CLOSED**, with one narrow, documented exception:
+`InsuredPerson` name-splitting, deferred until that model gets real CRUD
+(see "What item #4 does NOT cover" above) — this is a pre-existing gap this
+item did not create and is not blocking on. Item #5 remains PARTIALLY
+complete — number/date formatting only; Hijri calendar and multi-currency
+(reinsurance) remain open, documented future work (see "What item #5 does
+NOT cover" above). Do not assume a future session can mark item #5 fully
+closed without addressing its own deferred scope. Wait for the user's
+explicit go-ahead before resuming item #5's remaining scope, starting item
+#6 (bilingual full-text search), or any other Part F item — do not
+self-select. Items #6-7 each look like their own multi-session effort (item
+#7 in particular has no document-generation infrastructure to build on at
+all yet); item #8 (the 4-state screenshot discipline) is a verification
+overlay on whichever of #6-7 land, not a standalone build.
