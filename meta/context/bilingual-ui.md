@@ -1,6 +1,16 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-08 (item #7 — system-generated bilingual
+**Last verified:** 2026-09-08 — **PART F IS NOW COMPLETE (all 8 items
+either shipped or explicitly, deliberately scoped down by the user).**
+Item #8 — four-state (loading/empty/error/populated) screenshot
+evidence — built this entry, closing the Part: scoped to the ~8
+screens items #1-7 actually built/touched (a user-confirmed decision,
+not a blanket sweep of the app's ~80 pages), captured as plain PNG
+evidence (`page.screenshot()`, no pixel-diff baseline) rather than
+Playwright's `toHaveScreenshot()` visual-regression snapshotting (also
+user-confirmed — avoids brittle cross-platform font-rendering diffs on
+a bilingual RTL/LTR app) — see "What item #8 covers" below. Before
+item #8: item #7 — system-generated bilingual
 documents — **NOW COMPLETE, all 6 named document types built**:
 complaint acknowledgement (the vertical slice proving the FIRST
 document-generation infrastructure this app has ever had —
@@ -120,14 +130,17 @@ single module:
    for a generated file remains explicit, documented future work — this app has no
    real object storage anywhere.
 8. Four-state (loading/empty/error/populated) screenshot evidence per screen — a
-   verification DISCIPLINE overlay on 1-7, not a separate build item.
+   verification DISCIPLINE overlay on 1-7, not a separate build item. **BUILT, this
+   entry — CLOSES PART F.** Scoped, per a user-confirmed decision, to the screens
+   items #1-7 actually built/touched (not a blanket sweep of the whole app's ~80
+   pages) — see "What item #8 covers" below.
 
 Worked one item at a time, the Part D/E pacing convention — this file now covers
-items #1-7 (item #4 CLOSED with one narrow, documented exception; items #5 and #6
+ALL 8 items (item #4 CLOSED with one narrow, documented exception; items #5 and #6
 PARTIAL, by explicit user scoping decision; item #7 CLOSED — all 6 document types
-built). Item #8 is unbuilt; do not
-assume it is covered by any earlier item's own infrastructure without
-checking that item's own "does NOT cover" section below.
+built; item #8 CLOSED). **PART F IS NOW COMPLETE** — every named item has either
+shipped or been explicitly, deliberately scoped down by the user, with every
+deferred edge documented in that item's own "does NOT cover" section below.
 
 ## What item #1 covers
 
@@ -2350,7 +2363,176 @@ space, how to tell a "responding" process from a genuinely-alive one)
 saved separately in project memory:
 `project_docker_vhdx_disk_full.md`.
 
+## What item #8 covers — CLOSES PART F
+
+Item #8's own bullet ("Four-state (loading/empty/error/populated)
+screenshot evidence per screen") is framed in the item list's own intro
+as "a verification DISCIPLINE overlay on 1-7, not a separate build
+item" — meaning it applies to what items #1-7 actually built, not a
+blanket requirement to instrument every one of the app's ~80 pages.
+Two real scoping decisions were confirmed with the user via
+`AskUserQuestion` before building, after a research pass established
+the facts below:
+
+- **Screenshot infrastructure did not exist at all before this item** —
+  confirmed by grep before assuming otherwise: no `toHaveScreenshot(`/
+  `expect(page).toHaveScreenshot` anywhere in `apps/web/e2e/**`, no
+  `screenshots/` directory tracked or git-ignored, no `screenshot:`
+  option in `playwright.config.ts`. This was genuine new build-out, not
+  wiring up something dormant.
+- **`verification-contract.md`'s own "Required UI states" section is
+  silent on retroactive scope** — it reads as a per-changed-page gate
+  going forward ("Every changed frontend page must eventually have...")
+  under "# Frontend pages additionally", not an explicit mandate to
+  backfill evidence for every already-shipped page in the app.
+- **The 4 states already mostly exist in real code, not just as an
+  aspiration** — checked 2 representative pages before assuming
+  otherwise: `customers/page.tsx` and `leads/page.tsx` both have
+  genuine, distinct loading/empty/error/populated branches (an
+  established house convention — `=== null` loading, `role="alert"`
+  error, `.length === 0` empty, a populated list/table), and 9 existing
+  e2e spec files already assert on empty/error text. This item is
+  capturing evidence of states that already work, not building missing
+  UI.
+- **Scope, confirmed via `AskUserQuestion`: the ~8 screens items #1-7
+  actually built/touched**, not the whole ~80-page app. The app has 84
+  `page.tsx` files total, but only 13 commits were tagged "Part F item
+  #N" across items #1-7, touching mostly document-generation
+  infrastructure and global CSS/layout — not a broad per-page sweep;
+  treating "applies to every screen" literally would turn this item
+  into a general app-wide QA screenshot sweep, disproportionate to a
+  bilingual-UI verification step and explicitly rejected as the
+  non-chosen option.
+- **Mechanism, confirmed via `AskUserQuestion`: plain `page.screenshot()`
+  saved as PNG evidence, not Playwright's `toHaveScreenshot()` visual
+  regression.** Matches `verification-contract.md`'s own framing ("A
+  state with no screenshot is a state that is not implemented" — proof
+  of existence, not a pixel-perfect regression test) and avoids a much
+  bigger ongoing maintenance commitment (per-OS/browser baselines,
+  frequent false failures from font/anti-aliasing differences —
+  especially likely on a bilingual RTL/LTR app rendering two scripts).
+- **New `apps/web/e2e/four-state-screenshots.spec.ts`** — 10 tests
+  covering 8 screens, each capturing whichever states are genuinely
+  applicable (`verification-contract.md`'s own "Only applicable states
+  need to be implemented for a specific page" allowance — a detail page
+  has no "empty" concept; `watchlist-sync`/`customers/[id]` render
+  nothing visibly distinguishable while loading, so that state was
+  skipped for those two rather than captured as an indistinguishable
+  blank screenshot):
+  - `/customers` (item #6 search, item #3 bidi) — loading/empty/error/
+    populated, rendered in Arabic with a real Arabic legal name so the
+    screenshot itself demonstrates RTL mirroring + bidi isolation, not
+    just an English page that happens to work.
+  - `/customers/[id]` (item #3 bidi, item #4 name split) — error/
+    populated, with an Arabic UBO whose split national-ID name parts
+    (`givenName`/`fatherName`/`familyName`) render as distinct fields.
+  - `/watchlist-sync` (item #2 RTL layout mirroring — the same page
+    `rtl-layout.spec.ts` itself uses as its bounding-box proof) —
+    empty/error/populated, rendered in Arabic.
+  - `/complaints` (item #7 slice — complaint acknowledgement) —
+    loading/empty/error/populated, with the "Download acknowledgement
+    (PDF)" button visible in the populated state.
+  - `/rfqs/[id]` (item #7 slice — quotation comparison) — error/empty/
+    populated, split into 3 separate tests (each a fresh page) rather
+    than chained navigations within one test — the ONLY screen in this
+    file needing that split, see the debugging note below.
+  - `/opportunities/[id]` (item #7 slices — recommendation, policy
+    schedule, certificate, invoice — 4 of the 6 document types, all on
+    ONE page across different sections) — error/empty/populated, with
+    the populated state built to show ALL FOUR "Download..." buttons
+    simultaneously (a sent+unblocked recommendation, an issued policy
+    with a schedule, a raised invoice) — visually confirmed via the
+    actual PNG, not just a passing assertion.
+  - `/prospects`, `/vendors` (item #6 search) — loading/empty/error/
+    populated, each with a real Arabic company/vendor name.
+- **A genuine bug found and fixed while building this item's own test
+  fixtures, not in application code**: `GET /quotations?rfqId=` returns
+  `QuotationChain[]` (grouped per insurer, `{ current, versions,
+  history }`), never a flat `QuotationVersion[]` — the first test draft
+  fed `QuotationsSection.tsx` the wrong shape, which crashed with
+  `Cannot read properties of undefined (reading 'versionNumber')`
+  (`chain.current` was `undefined`), surfacing as Chrome's own "This
+  page couldn't load" error rather than a React error boundary — found
+  via `page.on('pageerror', ...)`/`page.on('console', ...)` listeners
+  in a throwaway diagnostic spec, not by guessing. This was a mock-data
+  bug in the new test file, not an application bug — `QuotationsSection.
+  tsx` itself was already correct and behaves exactly as documented
+  once fed the real shape. Worth remembering for any FUTURE test
+  mocking `/quotations`: the response is per-insurer CHAINS, not a flat
+  list of quote versions.
+- **Screenshots are saved to `test-results/four-state-screenshots/
+  <screen>/<state>.png`, NOT committed** — `test-results/` was already
+  in `.gitignore` before this item (Playwright's own trace/report
+  output already lived there), so no new gitignore entry was needed;
+  the evidence is the successful test run + the files existing locally/
+  as a CI artifact, the same treatment Playwright's own trace files
+  already get.
+
+## What item #8 does NOT cover (read before assuming otherwise)
+
+- **The other ~75 pages in the app** — deliberately out of scope, a
+  user-confirmed decision (see "What item #8 covers" above). A future,
+  separate initiative to add screenshot evidence app-wide would be a
+  general QA improvement, not a Part F deliverable.
+- **Visual regression / pixel-diff testing** — deliberately not built
+  (`toHaveScreenshot()` was the explicitly rejected option). A future
+  visual-regression suite is a separate, larger initiative with its own
+  baseline-maintenance cost; this item's screenshots are NOT wired to
+  fail a build on a pixel difference.
+- **A CI step that uploads these screenshots as a build artifact** — not
+  added; the spec file produces them locally (and would in CI, under
+  `test-results/`), but no explicit CI workflow change was made to
+  surface them as a downloadable artifact. A real, if narrow, follow-up
+  gap for whichever session first needs these as CI-visible evidence
+  rather than a local run's output.
+- **The `loading` state for every screen** — only captured where the
+  page renders a genuinely distinguishable loading indicator (confirmed
+  per-page, not assumed): `/customers`, `/complaints`, `/prospects`,
+  `/vendors` have one ("Loading…" text); `/watchlist-sync` and
+  `/customers/[id]` do not (they render nothing extra while their data
+  fetch is in flight), so that state was correctly skipped there per
+  `verification-contract.md`'s own "only applicable states" allowance,
+  not silently missed.
+
+## Where the code lives — item #8
+
+- `apps/web/e2e/four-state-screenshots.spec.ts` — new. All 10 tests,
+  the `mockAuth`/`capture`/`gate` (delayed-fulfillment) helpers, and
+  every screen's fixture data. No application code changed — this item
+  is test-only, confirmed via `git diff --stat` (one new file).
+- `apps/web/playwright.config.ts` — unchanged; no `screenshot:` option
+  was added (the deliberate plain-`page.screenshot()`-not-
+  `toHaveScreenshot()` decision above needs none).
+- `.gitignore` — unchanged; `test-results/` already covered the new
+  `four-state-screenshots/` subdirectory.
+
+## Verification — item #8
+
++10 new Playwright tests (`four-state-screenshots.spec.ts`) — full web
+suite **309/309 green** (up from 299 before this item; every existing
+test still passing, confirmed by a genuinely fresh full-suite run, not
+assumed unaffected because the change was additive). `npm run
+typecheck`/`lint`/`build` (web) clean. No backend files touched,
+confirmed via `git diff --stat`. 26 PNG screenshots produced across the
+8 screens (some spot-checked visually, not just asserted present) —
+`/customers`'s populated screenshot genuinely shows the mirrored RTL
+sidebar + the Arabic legal name rendering correctly; `/opportunities/
+[id]`'s populated screenshot genuinely shows all 4 of its
+"Download..." buttons at once.
+
 ## Next
+
+**PART F IS NOW COMPLETE — every one of the 8 named items has either
+shipped or been explicitly, deliberately scoped down by the user, with
+every deferred edge documented.** There is no more Part F work to
+self-select. Anything resuming item #5's Hijri/multi-currency scope,
+item #6's same-script-typo-tolerance/`Insurer`-search scope, item #8's
+~75-page/visual-regression scope, or building real `Document`
+persistence for item #7's generated files, needs an explicit, fresh
+user go-ahead — none of it is "finishing Part F," it is new,
+independently-scoped work the user has not asked for yet. The next
+session's own first move on this repo should be checking with the user
+for what comes after Part F, not continuing here.
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
 `InsuredPerson` name-splitting, deferred until that model gets real CRUD
@@ -2401,11 +2583,14 @@ explicitly out of scope — this app has no object storage anywhere, a
 separate, larger gap than this item's own ask; do not self-select
 building it. Item #5 and #6 remain PARTIALLY built (see their own
 sections above) — do not assume a future session can mark either fully
-closed without addressing its own deferred scope. Wait for the user's
-explicit go-ahead before resuming any of item #5/#6's remaining scope,
-or starting item #8 — do not self-select. Item #8 (the 4-state
-screenshot discipline) is the only item left in Part F, a verification
-overlay on items #1-7, not a standalone build.
+closed without addressing its own deferred scope. **Item #8 (the
+4-state screenshot discipline) is ALSO now CLOSED** — see "What item
+#8 covers" below, scoped to the ~8 screens items #1-7 actually built,
+not the whole app. Wait for the user's explicit go-ahead before
+resuming any of item #5/#6's remaining scope, extending item #8 to more
+screens, or building item #7's own deferred persistence gap — do not
+self-select any of it. **Part F itself is complete** as of this entry —
+see the top of this "## Next" section.
 
 Item #7's `apps/api/Dockerfile` fix (Alpine → `node:20.19.0-slim` for the
 Chromium runtime stage) is now independently verified end-to-end — a real
