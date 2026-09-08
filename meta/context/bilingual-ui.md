@@ -12,9 +12,21 @@ reusing all of the first's shared infrastructure, promoting
 `escapeHtml`/date/money formatting/CSS into a genuinely shared
 `document-html.util.ts`, and adding a new customer-visibility-preserving
 `ComparisonService.getByIdWithCustomer()` rather than shortcutting around
-`ComparisonMatrix`'s existing per-customer access rule) — the other 4
-document types remain open, documented future
-work — after item #6 remainder — fuzzy transliteration matching (a
+`ComparisonMatrix`'s existing per-customer access rule) PLUS
+recommendation report (the third document type, additionally gated on
+`Recommendation.send()`'s own `blockedFromSend` business-state check —
+a user-confirmed decision since this document is retained as
+professional-indemnity evidence — via a new `getByIdWithCustomer()`
+sibling helper on `RecommendationService`; a `@code-reviewer` pass found
+0 BLOCKERs and fixed 3 MINORs/2 NITs, most notably a missing-commercial-
+terms content gap and a real double-escaping bug in the newly-shared
+`formatDocumentPercent`; the full 63-file api e2e suite did NOT complete
+a fresh run this round due to sustained host memory pressure — a real,
+acknowledged verification gap, not a code issue, accepted per explicit
+user instruction to finish same-day rather than keep waiting) — the
+other 3 document types (policy schedule summary, invoice, certificate)
+remain open, documented future work — after item #6 remainder — fuzzy
+transliteration matching (a
 curated synonym table only; a distance-based fuzzy matcher was evaluated
 and REJECTED after empirical testing), item #6 itself — bilingual
 full-text search, item #4 — Arabic-first input (closed, one narrow
@@ -636,7 +648,7 @@ new fuzzy-matching machinery or a schema migration:
   re-attempting a fuzzy-distance design; the ceiling is inherent to the
   algorithm class, not this implementation.
 
-## What item #7 covers (PARTIAL — complaint acknowledgement + quotation comparison, 2 of 6 document types)
+## What item #7 covers (PARTIAL — complaint acknowledgement + quotation comparison + recommendation report, 3 of 6 document types)
 
 Item #7's own bullet names 6 document types of very different data
 richness. Presented with a research spike's findings before implementing,
@@ -730,29 +742,30 @@ pipeline end-to-end.
 
 ## What item #7 does NOT cover (read before assuming otherwise — explicitly deferred future work)
 
-- **The other 4 document types** — recommendation report, policy
-  schedule summary, invoice, certificate. Each has real underlying data
-  to build from (`Recommendation`; `Policy`+`PolicySchedule`; `Invoice`;
-  `Policy`+`PolicySchedule` again for certificate, no dedicated
-  certificate data model exists) — the SHARED infrastructure this item
-  built (`PdfRendererService`, `DocumentTemplateRepository`,
-  `DocumentGenerationModule`, and now `document-html.util.ts`'s
-  `escapeHtml`/`formatDocumentDate`/`formatDocumentMoney`/
-  `DOCUMENT_BASE_CSS`/`DocumentLanguage` — promoted to shared the moment
-  the SECOND document type needed them, per a `@code-reviewer` MINOR
-  finding on the first) is reusable for all 4, but none has its own HTML
-  template, `DocumentTemplate` seed row, endpoint, or web entry point
-  yet.
+- **The other 3 document types** — policy schedule summary, invoice,
+  certificate. Each has real underlying data to build from
+  (`Policy`+`PolicySchedule`; `Invoice`; `Policy`+`PolicySchedule` again
+  for certificate, no dedicated certificate data model exists) — the
+  SHARED infrastructure this item built (`PdfRendererService`,
+  `DocumentTemplateRepository`, `DocumentGenerationModule`, and
+  `document-html.util.ts`'s `escapeHtml`/`formatDocumentDate`/
+  `formatDocumentMoney`/`formatDocumentBiPeriod`/`formatDocumentPercent`/
+  `DOCUMENT_BASE_CSS`/`DocumentLanguage` — the last two promoted to
+  shared when the THIRD document type needed them, the same "promote
+  before the next one forks its own copy" discipline the first→second
+  promotion already established) is reusable for all 3, but none has its
+  own HTML template, `DocumentTemplate` seed row, endpoint, or web entry
+  point yet.
 - **Persistence / a `Document` audit trail for a generated file** — out
   of scope by user decision. This app has no real object storage
   anywhere; building one was judged a separate, larger gap than this
   item's own ask. A generated document is NOT retrievable later except
   by generating it again.
 - **`Insurer` documents / any document type for an entity with no browse
-  screen** — not applicable to either document type built so far
-  (Complaints and RFQs both have real list/detail pages), but will recur
-  for any future document type tied to an entity in the same gap class
-  item #4/#6 already hit.
+  screen** — not applicable to any document type built so far (Complaints,
+  RFQs, and Opportunities all have real list/detail pages), but will
+  recur for any future document type tied to an entity in the same gap
+  class item #4/#6 already hit.
 - **A picker in the web UI for language/dual mode** — both download
   buttons always request the customer's own default language; `DUAL` is
   only reachable by calling the api directly (e.g. `?language=DUAL`) for
@@ -834,6 +847,84 @@ didn't need:
   (`apps/web/components/comparison/ComparisonSection.tsx`) gained a
   "Download comparison (PDF)" button, visible once a matrix has been
   built, reusing `apiFetchBlob()` from item #7's first slice.
+
+## What item #7's recommendation-report slice covers
+
+The third document type, chosen next by the user. Unlike the first two
+(complaint acknowledgement, quotation comparison), `Recommendation` is
+EXPLICITLY the client-facing artefact Process 16's own `send()` exists to
+dispatch (`Recommendation.sentToClientAt`) — described in that module's
+own header comment as "the broker's documented, reasoned advice —
+retained as professional-indemnity evidence." This raised a genuinely new
+question the first two slices never faced: should document generation be
+gated on anything beyond visibility? Presented to the user via
+`AskUserQuestion` before implementing, the answer was **yes** —
+generation inherits the SAME `blockedFromSend` gate `send()` already
+enforces (a required senior-officer approval or conflict-of-interest
+disclosure still outstanding refuses with 422, the identical messages
+`send()` itself returns), on the reasoning that an ungated draft leaving
+the system as a PDF could otherwise reach a client by hand, defeating the
+whole maker/checker + COI safeguard.
+
+- **`RecommendationService.getByIdWithCustomer()`** — a sibling to
+  `loadVisible()` (a NEW `loadVisibleWithCustomer()` private helper, not
+  a change to `loadVisible()`'s own signature, which has 5 OTHER callers
+  — `draft`/`approve`/`discloseConflictOfInterest`/`send`/`get` — that
+  only need the recommendation itself). Both helpers call the SAME
+  `assertCustomerVisible()` (now Customer-returning, mirroring the
+  comparison slice's own fix), so there is no possibility of the two
+  drifting into different visibility rules — one rule, two callers, not
+  two copies. `getByIdWithCustomer()` then re-derives `blockedFromSend`
+  from LIVE data via the existing `toView()` → `computeBlocked()` →
+  `effectiveGates()` chain (the same live-re-derivation `send()` uses,
+  from an earlier `@code-reviewer` MAJOR finding on Process 16 itself) —
+  genuinely TOCTOU-safe: there is no "unapprove"/"retract disclosure"
+  mutation anywhere in this service, so `blockedFromSend` is monotonic
+  (non-empty → empty only), and nothing between the check and the render
+  can regress a state that already passed.
+- **Content scoping, a flagged judgment call** (no sourced house style
+  existed to follow): the document includes the recommended quote's FULL
+  commercial terms (insurer, premium, deductible, liability limit, BI
+  period, commission rate, exclusions/conditions — not just premium, a
+  real gap a `@code-reviewer` pass on this slice's own first draft
+  caught: two of the six rationale factors narrate "Deductible"/"Policy
+  Conditions" without the document ever stating the actual terms), the
+  rationale, all 6 factor notes, and — when flagged — the
+  conflict-of-interest disclosure TEXT (that text exists specifically to
+  be disclosed to the client; omitting it would defeat its own purpose).
+  Deliberately EXCLUDED: who drafted/approved/sent it, the raw
+  `blockedFromSend` list, and the raw `coiCommissionDiffPercent` number
+  (the disclosure text is the client-facing conveyance of that fact, not
+  a second, redundant exposure of the figure) — internal governance
+  metadata, not part of the advice itself.
+- **Two more shared utilities promoted**, this time to
+  `document-html.util.ts` directly (not first built locally then moved —
+  the comparison slice's own private `biPeriodCell`/`commissionCell`
+  were promoted alongside, once THIS slice needed the identical
+  bilingual "N months"/percent rendering): `formatDocumentBiPeriod`,
+  `formatDocumentPercent`. A `@code-reviewer` MINOR on this slice's first
+  draft also caught a real double-escaping bug in the commission-rate
+  cell (a pre-escaped string re-escaped by the generic row renderer) —
+  fixed by adopting the single-escape-internally convention
+  `formatDocumentPercent` now enforces structurally, not just by
+  convention.
+- **Raw `Prisma.Decimal` fields, not `view`'s pre-formatted display
+  strings** — `getByIdWithCustomer()` also returns the raw
+  `RecommendationWithContext` alongside `view`/`customer` (this method is
+  new this session, so broadening its own return shape cost nothing);
+  the document service reads `recommendedQuotation`'s Decimal fields
+  directly from there, the same raw-Decimal-in pattern
+  `QuotationComparisonDocumentService` already used, rather than
+  re-parsing `view.recommendedQuotation.premium`'s already-formatted
+  string (a real, if harmless-today, MINOR the review caught).
+- **A reference number on every document** — a NIT from this slice's own
+  review (mirrored back onto the comparison slice too, since it had the
+  identical gap): every document now shows its own id as a "Reference"
+  row, so a client has something to cite back to the broker.
+- **Web**: the RFQ detail page's existing "Broker recommendation"
+  section gained a "Download report (PDF)" button, rendered ONLY when
+  `blockedFromSend.length === 0` — mirroring the api's own gate in the
+  UI, not just relying on the api to refuse.
 
 ## Where the code lives
 
@@ -1272,6 +1363,76 @@ the first slice):
   last-registered-wins route precedence rather than modifying that large
   shared helper.
 
+**Item #7's recommendation-report slice** — no schema migration, no new
+permission, no new production dependency:
+
+- `apps/api/src/modules/document-generation/document-html.util.ts` —
+  gained `formatDocumentBiPeriod`/`formatDocumentPercent` (promoted from
+  `quotation-comparison.template.ts`'s own private `biPeriodCell`/
+  `commissionCell`, which now import the shared versions instead — the
+  comparison slice's own file shrank, not just this one's grew).
+  `document-html.util.spec.ts` — +8 new unit tests for the 2 new
+  functions (including a single-vs-double-escape regression test).
+- `apps/api/src/modules/recommendation/recommendation.service.ts` —
+  `assertCustomerVisible()` now returns `Customer` (was `void`); new
+  private `loadVisibleWithCustomer()` sibling helper (NOT a change to
+  `loadVisible()`'s own signature — that method has 5 other callers); new
+  public `getByIdWithCustomer()` — visibility PLUS the send-readiness
+  gate PLUS the raw `RecommendationWithContext` (for real Decimal fields,
+  not `view`'s pre-formatted strings).
+- `apps/api/src/modules/recommendation/recommendation-report.template.ts`
+  — new. Pure function, `buildRecommendationReportHtml()`.
+  `recommendation-report.template.spec.ts` — 13 new unit tests (AR-only,
+  EN-only, DUAL-both-Arabic-first, full commercial terms rendered with
+  em-dashes for every null field rather than omitted rows, all 6
+  rationale factors with bilingual labels, COI disclosure text included
+  only when flagged, no internal governance metadata ever rendered,
+  HTML-injection escaping on rationale/factor-notes/COI-disclosure-text,
+  single-vs-double-escape on the commission rate, and the reference
+  number).
+- `apps/api/src/modules/recommendation/recommendation-report-document.
+  service.ts` — new. `RecommendationReportDocumentService.generate()` —
+  calls `RecommendationService.getByIdWithCustomer()` (never the
+  repository directly), reads raw Decimal fields off the returned
+  `recommendation`, the `DocumentTemplate` row (or the built-in
+  fallback), builds the HTML, renders via `PdfRendererService`.
+- `apps/api/src/modules/recommendation/recommendation.controller.ts` —
+  new `GET :id/document` route, `recommendation.read` permission,
+  returns a `StreamableFile` (the service's own 422 propagates naturally
+  through Nest's exception filter — no extra handling needed in the
+  controller). `recommendation.module.ts` — imports
+  `DocumentGenerationModule`, registers
+  `RecommendationReportDocumentService`.
+- `packages/db/prisma/seed-data/document-templates.ts` — new
+  `recommendation_report` row (7th template overall, third of the 6 real
+  item #7 types) — seeded to both `db` and `db-test`.
+- `apps/api/test/recommendation.e2e-spec.ts` — the existing
+  `buildOpportunity()` fixture helper gained an optional 4th
+  `languagePreference` parameter (additive, the 3 pre-existing call sites
+  unaffected). 1 new test (multiple assertions): drafted-and-blocked ->
+  document endpoint 422 -> approve -> still 422 (COI outstanding) ->
+  disclose -> NOW 200 with a real PDF, plus permission (403), unknown-id
+  (404), non-owning-Sales-Officer (404) despite holding
+  `recommendation.read`, cross-owner Manager (200), AR/EN-customer
+  defaults, an explicit override, DUAL producing a genuinely LARGER PDF,
+  and 400 on an invalid `language` value.
+- `apps/api/src/modules/comparison/quotation-comparison.template.ts` —
+  retroactively updated to import the 2 newly-shared functions instead
+  of its own private copies (its own unit tests re-run unchanged
+  afterward); also gained the same "Reference" row the recommendation
+  slice's own review flagged as missing on both templates.
+- `apps/web/lib/recommendation/recommendation-api.ts` — new
+  `downloadRecommendationDocument()`.
+  `apps/web/components/recommendation/RecommendationSection.tsx` — new
+  "Download report (PDF)" button, rendered only when
+  `blockedFromSend.length === 0`.
+- `apps/web/e2e/rfq.spec.ts` — extended the existing recommendation
+  Playwright test: asserts the download button has count 0 while
+  blocked, then appears and produces a real browser download once the
+  test's own flow reaches "sent to client" — same
+  more-specific-route-after-mockRfqApi pattern the comparison slice's
+  own Playwright test already established.
+
 ## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
@@ -1620,6 +1781,90 @@ controller down to the database read and found no bypass, corroborated
 by `comparison.e2e-spec.ts`'s own real, non-owning-Sales-Officer-gets-404
 proof against a live app, not just a code-reading claim.
 
+## Verification — item #7's recommendation-report slice
+
+Touches `apps/api`, `apps/web`, `packages/db` (seed data only, no
+migration) — confirmed via `git diff --stat`. +18 new api unit tests (5
+in `document-html.util.spec.ts` for the 2 newly-promoted
+`formatDocumentBiPeriod`/`formatDocumentPercent` functions, including a
+single-vs-double-escape regression test; 12 in `recommendation-report.
+template.spec.ts`; 1 in `quotation-comparison.template.spec.ts` for the
+same reference-number fix retrofitted onto that earlier slice too) → api
+unit **2379/2379** (from 2361). +1 new api e2e test
+(`recommendation.e2e-spec.ts`, multiple assertions: drafted-and-blocked
+→ document endpoint 422, approve → still 422 pending COI disclosure,
+disclose → 200 with a real PDF; permission [403]/unknown-id [404]/
+non-owning-Sales-Officer-despite-`recommendation.read` [404]/
+cross-owner-Manager [200]; AR/EN customer-preference defaults, an
+explicit override, and DUAL producing a genuinely larger PDF than AR
+alone; 400 on an invalid `language` value) — targeted run
+(`recommendation.e2e-spec.ts` + `comparison.e2e-spec.ts` +
+`complaint.e2e-spec.ts`, the 3 files this round's changes actually
+touch) **7/7 green**, confirmed AFTER every review fix below was
+applied, not before. `npm run typecheck`/`lint`/`build` (api) all clean.
+
+**The full 63-file api e2e suite did not complete a fresh run this
+round.** Every attempt was killed by this machine's own sustained memory
+pressure (as low as 330-406MB free RAM on an 8GB machine, after a full
+day of repeatedly running this same heavy Chromium+Postgres suite across
+the earlier complaint-acknowledgement and quotation-comparison slices) —
+a pre-existing, well-documented constraint of this session's host, not a
+regression from this round's own changes. Per explicit user instruction
+("cancel the schedule ... start working the usual way ... finish this
+today"), the wait-and-retry pattern was stopped in favor of the targeted
+evidence above: full api unit suite green, the 3 directly-touched e2e
+files green post-fix, full `build`/`lint`/`typecheck` clean. **This is a
+real, acknowledged verification gap** relative to every other row in
+this document (each reports a completed full-suite number) — the next
+session touching this area should run the full suite fresh once host
+memory allows, rather than assume this round's targeted result stands in
+for it indefinitely.
+
+Web: `rfq.spec.ts`'s full file (28/28) was verified green BEFORE this
+round's final API-only review-fix pass (which touched no web files —
+confirmed via `git diff --stat`), so that result remains valid; it was
+not re-run fresh afterward, for the same host-memory reason above.
+
+**A `@code-reviewer` pass on the recommendation-report slice found 0
+BLOCKERs, 3 MINORs, 2 NITs, all 5 fixed:**
+
+1. MINOR — the document omitted the recommended quote's own commercial
+   terms (deductible, liability limit, BI period, exclusions/
+   conditions) even though 2 of the 6 rationale factors
+   (`deductible`/`policyConditions`) narrate terms the document never
+   stated anywhere — a client reading the PDF alone could not learn
+   what was actually being recommended. Fixed: all these fields now
+   render (an em dash for null, never an omitted row).
+2. MINOR — the commission-rate percent was being escaped twice (once
+   inside a formatter, once again at the call site). Fixed inside
+   `formatDocumentPercent` itself, with a regression test (in both
+   `document-html.util.spec.ts` and the template's own spec) proving
+   `&lt;` never becomes `&amp;lt;`.
+3. MINOR — the document service was pulling premium/deductible/etc.
+   from `view` (the service layer's already-formatted display strings)
+   instead of the raw `Prisma.Decimal` fields on
+   `recommendation.recommendedQuotation` — an unnecessary
+   format-then-parse-then-reformat round-trip through the template's
+   own formatters. Fixed: the document service now reads straight off
+   the raw recommendation record (see `getByIdWithCustomer()`'s return
+   shape above).
+4. NIT — like the quotation-comparison document before it, the
+   recommendation report had no reference number a client could cite
+   back to the broker. Fixed: both templates now render one
+   (`recommendationId`/`comparisonId` respectively).
+5. NIT — a stale doc comment, folded into the fix for #3.
+
+The review's own primary focus — whether `getByIdWithCustomer()` could
+produce a document for a recommendation that has NOT cleared `send()`'s
+own gates — traced `blockedFromSend`'s computation (`effectiveGates()`,
+re-derived live from current approval/COI-disclosure state, never a
+draft-time snapshot) and confirmed it monotonic: nothing in this
+codebase "unapproves" a recommendation or retracts a disclosure once
+made, so there is no TOCTOU window where a gate clears between the check
+and the render. Corroborated by the e2e test's own draft → blocked →
+approve → still-blocked → disclose → unblocked sequence run against a
+live app, not just a code-reading claim.
+
 ## Next
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
@@ -1635,34 +1880,50 @@ that finding first. Same-script typo tolerance and `Insurer` search remain
 open, documented future work. Item #5 remains PARTIALLY complete —
 number/date formatting only; Hijri calendar and multi-currency
 (reinsurance) remain open, documented future work (see "What item #5 does
-NOT cover" above). **Item #7 is now also PARTIALLY built, on 2 of 6
-document types** — complaint acknowledgement, then quotation comparison,
-which reused the first's shared rendering infrastructure
-(`PdfRendererService`, `DocumentTemplateRepository`,
-`DocumentGenerationModule`) unchanged and additionally promoted
-`escapeHtml`/date+money formatting/base CSS into a genuinely shared
-`document-html.util.ts` (a `@code-reviewer` MINOR finding on the first
-slice, acted on proactively rather than after a third document type
-forked its own copy). The other 4 (recommendation report, policy
-schedule summary, invoice, certificate) remain open, documented future
-work — each has real underlying data to build from (see "What item #7
-does NOT cover" above), but none has its own HTML template, seed row,
-endpoint, or web entry point yet. A real lesson from the comparison
-slice worth re-reading before building any of the remaining 4: **check
-whether the underlying entity already enforces per-customer visibility
-beyond a flat permission** (`Complaint` does not; `ComparisonMatrix`
-does) — the document endpoint must inherit that check via the entity's
-own service, never by querying its repository directly, or a real
-access-control regression follows. Persistence (a real `Document` audit
-trail for a generated file) remains explicitly out of scope — this app
-has no object storage anywhere, a separate, larger gap than this item's
-own ask. Do not assume a future session can mark item #5, #6, or #7
-fully closed without addressing its own deferred scope. Wait for the
-user's explicit go-ahead before resuming any of item #5/#6/#7's
-remaining scope, or starting any other Part F item — do not self-select.
-Item #8 (the 4-state screenshot discipline) is a verification overlay on
-whichever of #5-7 land, not a
-standalone build.
+NOT cover" above). **Item #7 is now on 3 of 6 document types** —
+complaint acknowledgement, then quotation comparison (which reused the
+first's shared rendering infrastructure — `PdfRendererService`,
+`DocumentTemplateRepository`, `DocumentGenerationModule` — unchanged and
+additionally promoted `escapeHtml`/date+money formatting/base CSS into a
+genuinely shared `document-html.util.ts`, a `@code-reviewer` MINOR
+finding on the first slice acted on proactively rather than after a
+third document type forked its own copy), then the recommendation
+report (see "What item #7's
+recommendation-report slice covers" above) — the third slice reused the
+comparison slice's own visibility-preserving-read pattern
+(`getByIdWithCustomer()` as a sibling helper, never widening an existing
+method's return shape) and additionally gated document generation on the
+SAME business-state check `Recommendation.send()` itself enforces
+(`blockedFromSend`), a user-confirmed design decision specific to this
+document type — a recommendation report is retained as
+professional-indemnity evidence, so it must never be generatable before
+the advice it documents has actually cleared approval/COI-disclosure.
+A real lesson from the comparison slice, re-applied and re-confirmed
+here, worth re-reading before building any of the remaining 3 (policy
+schedule summary, invoice, certificate): **check whether the underlying
+entity already enforces per-customer visibility beyond a flat
+permission** (`Complaint` does not; `ComparisonMatrix` and
+`Recommendation` both do) — the document endpoint must inherit that
+check via the entity's own service, never by querying its repository
+directly, or a real access-control regression follows. Persistence (a
+real `Document` audit trail for a generated file) remains explicitly out
+of scope — this app has no object storage anywhere, a separate, larger
+gap than this item's own ask. Do not assume a future session can mark
+item #5, #6, or #7 fully closed without addressing its own deferred
+scope. Wait for the user's explicit go-ahead before resuming any of item
+#5/#6/#7's remaining scope, or starting any other Part F item — do not
+self-select. Item #8 (the 4-state screenshot discipline) is a
+verification overlay on whichever of #5-7 land, not a standalone build.
+
+**A real, acknowledged gap from this round specifically**: the full
+63-file api e2e suite did not complete a fresh run for the
+recommendation-report slice (see "Verification — item #7's
+recommendation-report slice" above) — sustained host memory pressure,
+not a code issue, and the user explicitly instructed dropping the
+wait-and-retry pattern to finish this slice same-day. The next session
+touching `apps/api` should run the full suite fresh once host memory
+allows, rather than treat this round's targeted 7/7 as a permanent
+substitute.
 
 Item #7's `apps/api/Dockerfile` fix (Alpine → `node:20.19.0-slim` for the
 Chromium runtime stage) is now independently verified end-to-end — a real
