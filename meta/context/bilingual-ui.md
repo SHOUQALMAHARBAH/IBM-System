@@ -20,13 +20,22 @@ professional-indemnity evidence — via a new `getByIdWithCustomer()`
 sibling helper on `RecommendationService`; a `@code-reviewer` pass found
 0 BLOCKERs and fixed 3 MINORs/2 NITs, most notably a missing-commercial-
 terms content gap and a real double-escaping bug in the newly-shared
-`formatDocumentPercent`; the full 63-file api e2e suite did NOT complete
-a fresh run this round due to sustained host memory pressure — a real,
-acknowledged verification gap, not a code issue, accepted per explicit
-user instruction to finish same-day rather than keep waiting) — the
-other 3 document types (policy schedule summary, invoice, certificate)
-remain open, documented future work — after item #6 remainder — fuzzy
-transliteration matching (a
+`formatDocumentPercent`) PLUS policy schedule summary (the fourth
+document type, gated instead on a plain data-availability check —
+`schedules.length === 0` — since `Policy` already enforced real
+per-customer visibility before this item; the same
+`getByIdWithCustomer()` sibling-helper pattern reused a third time, now
+on `PolicyService`; the first item #7 document to render the `limits`/
+`sumsInsured` free-form JSON coverage figures, a flagged content
+decision). The full 63-file api e2e suite was attempted fresh for BOTH
+the recommendation-report and policy-schedule-summary rounds and did
+NOT complete either time — sustained host memory pressure (as low as
+~330-580MB free RAM on an 8GB machine), a real, acknowledged
+verification gap on both rounds, not a code issue; each round's
+targeted evidence (full unit suite + the directly-relevant e2e files,
+all green) stands in instead — the other 2 document types (invoice,
+certificate) remain open, documented future work — after item #6
+remainder — fuzzy transliteration matching (a
 curated synonym table only; a distance-based fuzzy matcher was evaluated
 and REJECTED after empirical testing), item #6 itself — bilingual
 full-text search, item #4 — Arabic-first input (closed, one narrow
@@ -648,7 +657,7 @@ new fuzzy-matching machinery or a schema migration:
   re-attempting a fuzzy-distance design; the ceiling is inherent to the
   algorithm class, not this implementation.
 
-## What item #7 covers (PARTIAL — complaint acknowledgement + quotation comparison + recommendation report, 3 of 6 document types)
+## What item #7 covers (PARTIAL — complaint acknowledgement + quotation comparison + recommendation report + policy schedule summary, 4 of 6 document types)
 
 Item #7's own bullet names 6 document types of very different data
 richness. Presented with a research spike's findings before implementing,
@@ -742,20 +751,20 @@ pipeline end-to-end.
 
 ## What item #7 does NOT cover (read before assuming otherwise — explicitly deferred future work)
 
-- **The other 3 document types** — policy schedule summary, invoice,
-  certificate. Each has real underlying data to build from
-  (`Policy`+`PolicySchedule`; `Invoice`; `Policy`+`PolicySchedule` again
-  for certificate, no dedicated certificate data model exists) — the
-  SHARED infrastructure this item built (`PdfRendererService`,
+- **The other 2 document types** — invoice, certificate. Certificate has
+  real underlying data to build from (`Policy`+`PolicySchedule` again, no
+  dedicated certificate data model exists — the same data the
+  policy-schedule-summary slice just used); invoice has its own `Invoice`
+  model. The SHARED infrastructure this item built (`PdfRendererService`,
   `DocumentTemplateRepository`, `DocumentGenerationModule`, and
   `document-html.util.ts`'s `escapeHtml`/`formatDocumentDate`/
   `formatDocumentMoney`/`formatDocumentBiPeriod`/`formatDocumentPercent`/
   `DOCUMENT_BASE_CSS`/`DocumentLanguage` — the last two promoted to
   shared when the THIRD document type needed them, the same "promote
   before the next one forks its own copy" discipline the first→second
-  promotion already established) is reusable for all 3, but none has its
-  own HTML template, `DocumentTemplate` seed row, endpoint, or web entry
-  point yet.
+  promotion already established) is reusable for both, but neither has
+  its own HTML template, `DocumentTemplate` seed row, endpoint, or web
+  entry point yet.
 - **Persistence / a `Document` audit trail for a generated file** — out
   of scope by user decision. This app has no real object storage
   anywhere; building one was judged a separate, larger gap than this
@@ -763,9 +772,9 @@ pipeline end-to-end.
   by generating it again.
 - **`Insurer` documents / any document type for an entity with no browse
   screen** — not applicable to any document type built so far (Complaints,
-  RFQs, and Opportunities all have real list/detail pages), but will
-  recur for any future document type tied to an entity in the same gap
-  class item #4/#6 already hit.
+  RFQs, Opportunities, and Policy all have real list/detail pages), but
+  will recur for any future document type tied to an entity in the same
+  gap class item #4/#6 already hit.
 - **A picker in the web UI for language/dual mode** — both download
   buttons always request the customer's own default language; `DUAL` is
   only reachable by calling the api directly (e.g. `?language=DUAL`) for
@@ -925,6 +934,76 @@ whole maker/checker + COI safeguard.
   section gained a "Download report (PDF)" button, rendered ONLY when
   `blockedFromSend.length === 0` — mirroring the api's own gate in the
   UI, not just relying on the api to refuse.
+
+## What item #7's policy-schedule-summary slice covers
+
+The fourth document type, chosen next by the user. Confirms the backlog's
+own "Derive it from Policy + PolicySchedule" scoping decision (made
+earlier this item, for the certificate type) applies just as directly
+here — a schedule summary IS that same underlying data, no new data
+model needed.
+
+- **A data-availability gate, not a business-workflow one.** Unlike the
+  recommendation report (gated on `blockedFromSend`, a governance state),
+  a Policy simply has NO coverage schedule to summarize until Process 19
+  issuance records the first one — `schedules.length === 0` before that.
+  The document endpoint 422s in that window (`policy has not yet been
+  issued`), a plain data-availability check, not a second gate needing
+  its own design discussion. There is a real, brief crash-recovery window
+  documented in `policy.service.ts#recordIssuance()` where `policyNumber`
+  is set before the schedule is created — the gate is on
+  `schedules.length`, not `policyNumber`, so that window is handled
+  correctly without special-casing it.
+- **`PolicyService.getByIdWithCustomer()`** — the same
+  visibility-preserving-read pattern as the comparison and recommendation
+  slices: `assertCustomerVisible()` widened to return the fetched
+  `Customer` (was `void`; the 3 pre-existing callers all ignored the
+  return value, so this was a safe, non-breaking change), a new sibling
+  method (never widening `loadVisible()`'s own signature — that method
+  has several other callers: `get()`, `place()`, `recordIssuance()`,
+  `attachDocuments()`, plus the Process 20/21 sub-services). `Policy`
+  already enforced real per-customer visibility before this item
+  (inherited from its Customer, PLUS a Policy Checking Officer's
+  documented cross-book reach for Process 20 QC) — confirmed by reading
+  `policy.service.ts` before building, not assumed.
+- **"Most recent schedule" — `schedules[0]`, no open/closed branching
+  needed.** `PolicyRepository`'s own `POLICY_INCLUDE` already orders
+  `schedules` `effectiveFrom desc`; closing one schedule and opening its
+  replacement happen together in `versionScheduleForEndorsement()` (one
+  interactive transaction), so the latest-effective row is always also
+  the currently-open one whenever an open one exists. A cancelled
+  policy's most recent schedule is its last CLOSED one — the document
+  still renders it (an "as at" historical snapshot) rather than refusing
+  outright, since a client can reasonably want a record of what was in
+  force before cancellation.
+- **`limits`/`sumsInsured` rendered for the first time in any item #7
+  document — a flagged content decision.** These are free-form JSON
+  objects with NO fixed key vocabulary
+  (`policy.config.ts#assertCoverageFigures` only checks "non-empty flat
+  object of string/number scalars" — the key names are whatever
+  Placement/Checking staff typed). The quotation-comparison slice
+  deliberately OMITTED `limits` for exactly this reason (no established
+  display convention); that option does not exist here — the schedule
+  IS this document's whole content. Resolved by: rendering each key as
+  literal, escaped, NEVER-translated text (the same treatment other
+  free-text fields like `Complaint.issue` already get), and each value
+  through `formatDocumentMoney` — the schema's own doc comment calls
+  these figures "the requested/issued coverage snapshot", monetary by
+  domain convention even though not yet `Decimal`-typed; a non-numeric
+  string value degrades gracefully to that formatter's own existing
+  escaped-raw-plus-currency-prefix fallback rather than crashing or
+  needing new handling.
+- **Mirrors `PolicySection.tsx`'s own existing "Requested X · Issued Y
+  (Δ Z)" premium display** (reusing `policy.config.ts#premiumVariance()`
+  as-is, not recomputed) and its "Effective FROM – TO/ongoing" schedule
+  range wording — a printable rendering of the same data the web screen
+  already shows, the same "never invent a second independently-chosen
+  display" discipline the comparison slice's table columns established.
+- **Web**: the existing "Coverage schedule" block on `PolicySection.tsx`
+  gained a "Download schedule summary (PDF)" button, rendered ONLY when
+  `schedules.length > 0` — mirroring the api's own data-availability
+  gate in the UI, the same pattern the recommendation slice's
+  `blockedFromSend` gating already established.
 
 ## Where the code lives
 
@@ -1433,6 +1512,67 @@ permission, no new production dependency:
   more-specific-route-after-mockRfqApi pattern the comparison slice's
   own Playwright test already established.
 
+**Item #7's policy-schedule-summary slice** — no schema migration, no
+new permission, no new production dependency:
+
+- `apps/api/src/modules/policy/policy.service.ts` —
+  `assertCustomerVisible()` now returns `Customer` (was `void`, the same
+  widening the comparison/recommendation slices already made to their
+  own equivalents); new public `getByIdWithCustomer()` sibling method
+  (not a change to `loadVisible()`'s own signature — that has several
+  other callers).
+- `apps/api/src/modules/policy/policy-schedule-summary.template.ts` —
+  new. Pure function, `buildPolicyScheduleSummaryHtml()`.
+  `policy-schedule-summary.template.spec.ts` — 15 new unit tests
+  (AR-only, EN-only, DUAL-both-Arabic-first, reference/policy numbers,
+  full premium+variance rendering, every limits/sums-insured entry
+  money-formatted with its raw key as the label, named-perils/extensions
+  lists, em-dash-never-omitted rows, "ongoing" for an open schedule in
+  each language, an empty coverage-figure table rendering nothing rather
+  than crashing, no internal governance metadata, HTML-injection
+  escaping on a coverage-figure key and on perils/extensions, a
+  non-numeric coverage-figure value degrading gracefully instead of
+  crashing, and a null issued premium never omitting its row).
+- `apps/api/src/modules/policy/policy-schedule-summary-document.
+  service.ts` — new. `PolicyScheduleSummaryDocumentService.generate()` —
+  calls `PolicyService.getByIdWithCustomer()` (never the repository
+  directly), the data-availability gate on `schedules[0]`, reads raw
+  Decimal/JSON fields straight off the returned `PolicyWithContext`
+  (never a formatted display string), builds the HTML, renders via
+  `PdfRendererService`.
+- `apps/api/src/modules/policy/policy.controller.ts` — new
+  `GET :id/document` route, `policy.read` permission, returns a
+  `StreamableFile` (the service's own 422 propagates naturally through
+  Nest's exception filter). `policy.module.ts` — imports
+  `DocumentGenerationModule`, registers
+  `PolicyScheduleSummaryDocumentService`.
+- `packages/db/prisma/seed-data/document-templates.ts` — new
+  `policy_schedule_summary` row (8th template overall, fourth of the 6
+  real item #7 types) — seeded to both `db` and `db-test`.
+- `apps/api/test/policy.e2e-spec.ts` — the existing `buildOpportunity()`
+  fixture helper gained an optional 3rd `languagePreference` parameter
+  (additive, threaded through `opportunityWithSentRecommendation()` /
+  `acceptedOpportunity()` / `issuedPolicy()`, all still defaulting to
+  `'AR'` — the 3 pre-existing call sites unaffected). 1 new test
+  (multiple assertions): a placed-but-not-yet-issued policy -> document
+  endpoint 422 ("has not yet been issued"), then an issued policy ->
+  permission (403) / unknown-id (404) / non-owning-Sales-Officer (404)
+  despite holding `policy.read` / cross-owner Manager (200) / AR/EN
+  customer-preference defaults / an explicit override / DUAL producing a
+  genuinely LARGER PDF / 400 on an invalid `language` value.
+- `apps/web/lib/policy/policy-api.ts` — new
+  `downloadPolicyScheduleDocument()`.
+  `apps/web/components/policy/PolicySection.tsx` — new "Download
+  schedule summary (PDF)" button inside the existing "Coverage schedule"
+  block, so it is rendered only when `schedules.length > 0`.
+- `apps/web/e2e/rfq.spec.ts` — extended the existing policy-placement
+  Playwright test: asserts the download button has count 0 both before
+  placement and immediately after (PLACEMENT_CONFIRMED, no schedule
+  yet), then appears and produces a real browser download once issuance
+  records the first schedule — same more-specific-route-after-
+  mockRfqApi pattern the comparison/recommendation slices' own
+  Playwright tests already established.
+
 ## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
@@ -1865,6 +2005,50 @@ and the render. Corroborated by the e2e test's own draft → blocked →
 approve → still-blocked → disclose → unblocked sequence run against a
 live app, not just a code-reading claim.
 
+## Verification — item #7's policy-schedule-summary slice
+
+Touches `apps/api`, `apps/web`, `packages/db` (seed data only, no
+migration) — confirmed via `git diff --stat`. +15 new api unit tests
+(`policy-schedule-summary.template.spec.ts`) → api unit **2394/2394**
+(from 2379). +1 new api e2e test (`policy.e2e-spec.ts`, multiple
+assertions: a placed-but-not-issued policy → document endpoint 422
+["has not yet been issued"]; permission [403]/unknown-id [404]/
+non-owning-Sales-Officer-despite-`policy.read` [404]/cross-owner-Manager
+[200]; AR/EN customer-preference defaults, an explicit override, and
+DUAL producing a genuinely larger PDF than AR alone; 400 on an invalid
+`language` value) — targeted run (`policy.e2e-spec.ts` +
+`comparison.e2e-spec.ts` + `recommendation.e2e-spec.ts` +
+`complaint.e2e-spec.ts`) **13/13 green**. +1 new Playwright test
+(extended the existing "places a policy..." test in `rfq.spec.ts`:
+asserts the download button is absent both before placement and
+immediately after PLACEMENT_CONFIRMED with no schedule, then appears
+and produces a real download once issuance records the first schedule)
+— full `rfq.spec.ts` file **29/29 green**. `npm run typecheck`/`lint`/
+`build` (api + web) all clean.
+
+**The full 63-file api e2e suite was attempted fresh this round and was
+killed partway through by this machine's own sustained memory
+pressure** (as low as ~514-581MB free RAM on an 8GB machine, after a
+full day of repeatedly running this same heavy suite across the 3
+earlier document-type slices) — the same pre-existing host constraint
+recorded on every prior round in this table, not a regression from this
+round's own changes. Real progress WAS made before the kill: 4 files
+(`rbac.e2e-spec.ts`, `up-sell.e2e-spec.ts`, `audit.e2e-spec.ts`,
+`invoice.e2e-spec.ts` — none touched by this round) completed with
+every test green, `rbac.e2e-spec.ts`'s own tests individually taking
+100-330 SECONDS each — genuinely slow under this pressure, not hanging
+or failing — before the process was killed. Following the same
+resolution this table has used on every prior document-type round: the
+strong targeted evidence above (full unit suite, the 4 directly-relevant
+e2e files, full `typecheck`/`lint`/`build`) stands in for the
+incomplete full-suite run — **a real, acknowledged verification gap**,
+not a code issue. The full web e2e suite (60+ files) was NOT attempted
+this round for the same reason — `rfq.spec.ts` alone (the one file
+touching `PolicySection.tsx`) was run in full instead, the same scope
+the most recent prior round (recommendation report) settled on under
+the identical constraint. The next session touching `apps/api` or
+`apps/web` should run both full suites fresh once host memory allows.
+
 ## Next
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
@@ -1880,7 +2064,7 @@ that finding first. Same-script typo tolerance and `Insurer` search remain
 open, documented future work. Item #5 remains PARTIALLY complete —
 number/date formatting only; Hijri calendar and multi-currency
 (reinsurance) remain open, documented future work (see "What item #5 does
-NOT cover" above). **Item #7 is now on 3 of 6 document types** —
+NOT cover" above). **Item #7 is now on 4 of 6 document types** —
 complaint acknowledgement, then quotation comparison (which reused the
 first's shared rendering infrastructure — `PdfRendererService`,
 `DocumentTemplateRepository`, `DocumentGenerationModule` — unchanged and
@@ -1888,42 +2072,30 @@ additionally promoted `escapeHtml`/date+money formatting/base CSS into a
 genuinely shared `document-html.util.ts`, a `@code-reviewer` MINOR
 finding on the first slice acted on proactively rather than after a
 third document type forked its own copy), then the recommendation
-report (see "What item #7's
-recommendation-report slice covers" above) — the third slice reused the
-comparison slice's own visibility-preserving-read pattern
-(`getByIdWithCustomer()` as a sibling helper, never widening an existing
-method's return shape) and additionally gated document generation on the
-SAME business-state check `Recommendation.send()` itself enforces
-(`blockedFromSend`), a user-confirmed design decision specific to this
-document type — a recommendation report is retained as
-professional-indemnity evidence, so it must never be generatable before
-the advice it documents has actually cleared approval/COI-disclosure.
-A real lesson from the comparison slice, re-applied and re-confirmed
-here, worth re-reading before building any of the remaining 3 (policy
-schedule summary, invoice, certificate): **check whether the underlying
-entity already enforces per-customer visibility beyond a flat
-permission** (`Complaint` does not; `ComparisonMatrix` and
-`Recommendation` both do) — the document endpoint must inherit that
-check via the entity's own service, never by querying its repository
-directly, or a real access-control regression follows. Persistence (a
-real `Document` audit trail for a generated file) remains explicitly out
-of scope — this app has no object storage anywhere, a separate, larger
-gap than this item's own ask. Do not assume a future session can mark
-item #5, #6, or #7 fully closed without addressing its own deferred
-scope. Wait for the user's explicit go-ahead before resuming any of item
-#5/#6/#7's remaining scope, or starting any other Part F item — do not
-self-select. Item #8 (the 4-state screenshot discipline) is a
-verification overlay on whichever of #5-7 land, not a standalone build.
-
-**A real, acknowledged gap from this round specifically**: the full
-63-file api e2e suite did not complete a fresh run for the
-recommendation-report slice (see "Verification — item #7's
-recommendation-report slice" above) — sustained host memory pressure,
-not a code issue, and the user explicitly instructed dropping the
-wait-and-retry pattern to finish this slice same-day. The next session
-touching `apps/api` should run the full suite fresh once host memory
-allows, rather than treat this round's targeted 7/7 as a permanent
-substitute.
+report (see "What item #7's recommendation-report slice covers" above)
+— gated on the SAME business-state check `Recommendation.send()` itself
+enforces (`blockedFromSend`), a user-confirmed design decision specific
+to that document type — then the policy schedule summary (see "What
+item #7's policy-schedule-summary slice covers" above) — gated instead
+on a plain data-availability check (`schedules.length === 0`), since
+`Policy`+`PolicySchedule` already enforces real per-customer visibility
+the same way `ComparisonMatrix`/`Recommendation` do. A real lesson from
+the comparison slice, re-applied and re-confirmed on every slice since,
+worth re-reading before building either of the remaining 2 (invoice,
+certificate): **check whether the underlying entity already enforces
+per-customer visibility beyond a flat permission** (`Complaint` does
+not; `ComparisonMatrix`, `Recommendation`, and `Policy` all do) — the
+document endpoint must inherit that check via the entity's own service,
+never by querying its repository directly, or a real access-control
+regression follows. Persistence (a real `Document` audit trail for a
+generated file) remains explicitly out of scope — this app has no
+object storage anywhere, a separate, larger gap than this item's own
+ask. Do not assume a future session can mark item #5, #6, or #7 fully
+closed without addressing its own deferred scope. Wait for the user's
+explicit go-ahead before resuming any of item #5/#6/#7's remaining
+scope, or starting any other Part F item — do not self-select. Item #8
+(the 4-state screenshot discipline) is a verification overlay on
+whichever of #5-7 land, not a standalone build.
 
 Item #7's `apps/api/Dockerfile` fix (Alpine → `node:20.19.0-slim` for the
 Chromium runtime stage) is now independently verified end-to-end — a real
