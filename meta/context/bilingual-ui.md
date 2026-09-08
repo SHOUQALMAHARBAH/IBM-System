@@ -1,15 +1,24 @@
 # Bilingual UI (Part F, backlog Part 11)
 
-**Last verified:** 2026-09-08 (item #6 remainder — fuzzy transliteration
-matching — PARTIALLY built: a curated synonym table only, on the same
-`Customer`/`Prospect`/`Vendor` entity scope as item #6's own full-text
-search; a distance-based fuzzy matcher was evaluated and REJECTED after
-empirical testing showed an unacceptable false-positive rate; same-script
-typo tolerance and `Insurer` search remain deferred — after item #6 itself
-— bilingual full-text search (Arabic + English), item #4 — Arabic-first
-input (closed, one narrow exception), item #5 — locale-aware number/date
-formatting (partial), item #3 — bidi text handling, item #2 — full RTL
-layout, and item #1 — instant language switch) · **Owner:** none named;
+**Last verified:** 2026-09-08 (item #7 — system-generated bilingual
+documents — PARTIALLY built: complaint acknowledgement only, the vertical
+slice proving the FIRST document-generation infrastructure this app has
+ever had (headless-Chromium HTML-to-PDF rendering, empirically verified;
+the previously-dormant `DocumentTemplate` model activated) — a
+`@code-reviewer` pass caught and fixed 2 real deployability/reliability
+BLOCKERs before this was considered done, not just implementation-time
+self-review, and the actual Docker-build verification that followed
+caught and fixed a THIRD real bug (a browser-cache-path mismatch between
+the root build user and the unprivileged runtime user) that neither the
+review nor a merely-successful `docker build` surfaced; the other 5
+document types remain open, documented future
+work — after item #6 remainder — fuzzy transliteration matching (a
+curated synonym table only; a distance-based fuzzy matcher was evaluated
+and REJECTED after empirical testing), item #6 itself — bilingual
+full-text search, item #4 — Arabic-first input (closed, one narrow
+exception), item #5 — locale-aware number/date formatting (partial), item
+#3 — bidi text handling, item #2 — full RTL layout, and item #1 — instant
+language switch) · **Owner:** none named;
 cross-cutting, applies to every screen.
 
 ## What this is
@@ -57,18 +66,21 @@ single module:
    this app (only narrow lookups inside RFQ/commission), so adding search to it would
    mean building its first browse screen from scratch.
 7. System-generated bilingual documents (quotation comparison, recommendation report,
-   policy schedule, invoices, certificates, complaint acknowledgements) — not started;
-   no document-generation infrastructure (PDF or otherwise) exists anywhere in this app
-   yet — `Document` (Process #70) is version/classification METADATA tracking, not a
-   generator.
+   policy schedule, invoices, certificates, complaint acknowledgements) — **PARTIALLY
+   built, this entry: complaint acknowledgement only**, the vertical slice chosen (via
+   `AskUserQuestion`) to prove the shared rendering pipeline before extending to the
+   other 5. `Document` (Process #70) is version/classification METADATA tracking, not a
+   generator — this item builds the FIRST real document-generation infrastructure this
+   app has ever had (see "What item #7 covers" below), including activating the
+   previously-dormant `DocumentTemplate` model (Part 11.2).
 8. Four-state (loading/empty/error/populated) screenshot evidence per screen — a
    verification DISCIPLINE overlay on 1-7, not a separate build item.
 
 Worked one item at a time, the Part D/E pacing convention — this file now covers
-items #1-6 (item #4 CLOSED with one narrow, documented exception; items #5 and #6
-PARTIAL, by explicit user scoping decision). Items #7-8 are unbuilt; do not
-assume they are covered by any earlier item's own infrastructure without
-checking each item's own "does NOT cover" section below.
+items #1-7 (item #4 CLOSED with one narrow, documented exception; items #5, #6, and #7
+PARTIAL, by explicit user scoping decision). Item #8 is unbuilt; do not
+assume it is covered by any earlier item's own infrastructure without
+checking that item's own "does NOT cover" section below.
 
 ## What item #1 covers
 
@@ -622,6 +634,127 @@ new fuzzy-matching machinery or a schema migration:
   re-attempting a fuzzy-distance design; the ceiling is inherent to the
   algorithm class, not this implementation.
 
+## What item #7 covers (PARTIAL — complaint acknowledgement only, the chosen vertical slice)
+
+Item #7's own bullet names 6 document types of very different data
+richness. Presented with a research spike's findings before implementing,
+the user chose: headless-Chromium rendering (empirically tested, not
+assumed — see below), generate-on-demand with no persistence (this app has
+NO real object storage anywhere — `Document.storageRef` is an opaque
+string the CALLER already has to have gotten from somewhere; nothing ever
+writes real bytes to real storage), derive "certificate" from
+`Policy`+`PolicySchedule` when that type is eventually built (deferred,
+not built this pass), and **complaint acknowledgement as the first
+document type** — simplest real data, lowest risk way to prove the
+pipeline end-to-end.
+
+- **Rendering mechanism — empirically tested against real bilingual
+  content, not assumed.** A real HTML page containing Arabic (with an
+  RTL table, embedded LTR numbers, mixed-script content) and English was
+  rendered to PDF using the headless Chromium already cached locally via
+  this repo's own Playwright install (`apps/web`'s e2e-test browser
+  binary), then visually inspected: Arabic contextual letter shaping, RTL
+  table/paragraph direction, and embedded LTR numbers inside RTL text all
+  rendered correctly. A JS-native PDF library (pdfkit/pdfmake) was
+  considered and rejected — neither shapes Arabic script itself, and
+  there is no well-maintained library to do that reshaping first, a real
+  correctness risk for what is now this system's PRIMARY language.
+- **`playwright-core` (not `@playwright/test`) — a new `apps/api`
+  production dependency.** The browser-automation library alone, without
+  the test runner `apps/web`'s e2e suite uses it for; reuses the SAME
+  cached Chromium revision rather than triggering an independent
+  download. `PdfRendererService` (`apps/api/src/modules/
+  document-generation/pdf-renderer.service.ts`) launches ONE shared
+  browser for the process lifetime (a fresh browser per request would
+  cost ~1-2s of cold-start on every document) and a fresh `page` per
+  render, closed immediately after.
+- **`DocumentTemplate` (Part 11.2) activated for the first time.**
+  Schema-only before this item — no repository/service/controller ever
+  read or wrote it at runtime; the only seeded rows were 4 unrelated
+  `proposal_form_*` templates (Part B). New
+  `DocumentTemplateRepository.findByType()` (a `findFirst`, matching the
+  model's own no-unique-constraint shape the seed script's
+  `ensureDocumentTemplates()` already established) resolves the ONE new
+  real row (`templateType: 'complaint_acknowledgement'`) for its EDITABLE
+  boilerplate prose (`bodyEn`/`bodyAr`) — Compliance/Customer Service can
+  revise the wording without a code change, the same shape the seeded
+  `proposal_form_*` rows already established. Structured, per-instance
+  facts (reference, dates, category, SLA due date) are NOT stored in the
+  template — real domain data (`Complaint`, its `Customer`, its
+  `SlaTimer.dueAt`), merged in by
+  `complaint-acknowledgement.template.ts` around the boilerplate text,
+  never string-replaced into it. `ComplaintAcknowledgementService` falls
+  back to built-in default text (byte-identical to the real seed row's
+  wording) when no `DocumentTemplate` row exists yet — generation must
+  not hard-fail over a missing editable-prose row.
+- **Language selection**: `GET /complaints/:id/acknowledgement?language=
+  AR|EN|DUAL` — omitted defaults to the customer's own
+  `languagePreference` (the backlog's "client's preferred language"),
+  matching item #5's own "thread the real preference through" precedent
+  rather than a hardcoded default. `DUAL` renders BOTH languages in one
+  PDF as two full sections separated by a page break — **Arabic section
+  first, English second**, since Arabic is this system's PRIMARY
+  language (a user decision, this session) — not a side-by-side/
+  interleaved layout, which would be visually messy mixing two opposite
+  reading directions on one line.
+- **Generate-on-demand, not persisted** — a deliberate user scoping
+  decision given the no-object-storage gap above. `GET /complaints/:id/
+  acknowledgement` generates the PDF fresh on every call and streams it
+  back (Nest's `StreamableFile`) — no `Document` row is created, no bytes
+  are written anywhere. Same `complaint.log` permission as reading a
+  complaint (`ComplaintController.get()`) — generating an acknowledgement
+  is a read, not a new capability.
+- **A genuinely new injection-risk shape, closed deliberately, not
+  assumed safe.** `Complaint.issue` is customer-supplied free text
+  (`CreateComplaintDto.issue`), and this is the FIRST time this codebase
+  renders any user-influenced string inside a REAL browser engine — an
+  unescaped `<script>`/`<iframe>` would not be a cosmetic HTML-injection
+  bug, it would EXECUTE inside that page context (a real SSRF-shaped risk
+  via a headless browser reachable from wherever the api container
+  runs). Every interpolated value in `complaint-acknowledgement.
+  template.ts`'s `renderSection()` goes through a local `escapeHtml()`
+  first — verified via a dedicated unit test injecting a literal
+  `<script>` string and asserting it comes out escaped, not executable.
+- **Web**: the `/complaints` list page (no separate detail page existed
+  or was added) gained one "Download acknowledgement (PDF)" button per
+  row, visible to anyone holding `complaint.log` regardless of the
+  complaint's status. This is the FIRST binary (non-JSON) download
+  anywhere in `apps/web` — a new `apiFetchBlob()` primitive
+  (`lib/auth/api-client.ts`, mirrors `apiFetch()`'s own 401-retry-once
+  shape but resolves a `Blob`) triggers a browser download via an
+  object-URL + synthetic `<a download>` click, since a plain `<a href>`
+  cannot carry the `Authorization` bearer header this app's auth strategy
+  needs.
+
+## What item #7 does NOT cover (read before assuming otherwise — explicitly deferred future work)
+
+- **The other 5 document types** — quotation comparison, recommendation
+  report, policy schedule summary, invoice, certificate. Each has real
+  underlying data to build from (`ComparisonMatrix`+`ComparisonMatrixRow`
+  +`Quotation`; `Recommendation`; `Policy`+`PolicySchedule`; `Invoice`;
+  `Policy`+`PolicySchedule` again for certificate, no dedicated
+  certificate data model exists) — the SHARED infrastructure this item
+  built (`PdfRendererService`, `DocumentTemplateRepository`,
+  `DocumentGenerationModule`) is reusable for all 5, but none has its own
+  HTML template, `DocumentTemplate` seed row, endpoint, or web entry
+  point yet.
+- **Persistence / a `Document` audit trail for a generated file** — out
+  of scope by user decision. This app has no real object storage
+  anywhere; building one was judged a separate, larger gap than this
+  item's own ask. A generated acknowledgement is NOT retrievable later
+  except by generating it again.
+- **`Insurer` documents / any document type for an entity with no browse
+  screen** — not applicable to complaint acknowledgement (Complaints has
+  a real list page), but will recur for any future document type tied to
+  an entity in the same gap class item #4/#6 already hit.
+- **A picker in the web UI for language/dual mode** — the download button
+  always requests the customer's own default language; `DUAL` is only
+  reachable by calling the api directly (e.g. `?language=DUAL`) for now,
+  not from a UI control.
+- **Hijri dates, multi-currency** — unrelated, still item #5's own
+  deferred scope; the acknowledgement template's dates are Gregorian,
+  matching every other date in this app today.
+
 ## Where the code lives
 
 - `packages/db/prisma/schema.prisma` — `User.languagePreference` (line ~149) and the
@@ -934,6 +1067,65 @@ new permission, no web files touched (confirmed via `git diff --stat`):
   match (the two scripts share no tokens), so only the variant expansion
   explains the result.
 
+**Item #7 (partial — complaint acknowledgement only)** — no schema
+migration (the `DocumentTemplate` model already existed), no new
+permission, first `apps/api` production dependency added this whole Part
+F effort:
+
+- `apps/api/package.json` — new `playwright-core` dependency, pinned to
+  the exact version already resolved/cached locally via `apps/web`'s
+  `@playwright/test` install.
+- `apps/api/src/repositories/document-template.repository.ts` — new.
+  `findByType()`, the first-ever runtime access to `DocumentTemplate`.
+- `apps/api/src/modules/document-generation/pdf-renderer.service.ts` —
+  new. `PdfRendererService`, the shared Chromium wrapper (one browser for
+  the process lifetime, `OnModuleDestroy` closes it).
+  `document-generation.module.ts` — new. Exports `PdfRendererService` +
+  `DocumentTemplateRepository`; no controller, no document-type-specific
+  logic — every future document type imports this module the same way
+  `CustomerServiceModule` does.
+- `apps/api/src/modules/customer-service/complaint-acknowledgement.
+  template.ts` — new. Pure function, `buildComplaintAcknowledgementHtml()`
+  + `escapeHtml()`. `complaint-acknowledgement.template.spec.ts` — 7 new
+  unit tests (AR-only, EN-only, DUAL-both-Arabic-first, category
+  translation + unknown-category fallback, SLA-due-date omission when no
+  timer exists, HTML-injection escaping).
+- `apps/api/src/modules/customer-service/complaint-acknowledgement.
+  service.ts` — new. `ComplaintAcknowledgementService.generate()` —
+  loads the `Complaint` (existing `ComplaintRepository`), its `Customer`
+  (existing `CustomerRepository`, imported via `CustomerModule`), the
+  `DocumentTemplate` row (or the built-in fallback), builds the HTML,
+  renders it via `PdfRendererService`.
+- `apps/api/src/modules/customer-service/dto/
+  generate-complaint-acknowledgement-query.dto.ts` — new.
+  `language?: 'AR'|'EN'|'DUAL'`.
+- `apps/api/src/modules/customer-service/complaint.controller.ts` — new
+  `GET :id/acknowledgement` route, `complaint.log` permission, returns a
+  `StreamableFile`. `customer-service.module.ts` — imports `CustomerModule`
+  + `DocumentGenerationModule`, registers `ComplaintAcknowledgementService`.
+- `packages/db/prisma/seed-data/document-templates.ts` — new
+  `complaint_acknowledgement` row (5th template overall, first of the 6
+  real item #7 types) — seeded to both `db` and `db-test`.
+- `apps/api/test/complaint.e2e-spec.ts` — 1 new test (multiple
+  assertions): permission-gated (403), 404 on an unknown complaint,
+  AR-customer default, EN-customer default, an explicit `?language=AR`
+  override on an EN customer, DUAL producing a genuinely LARGER PDF than
+  either single-language document (a real byte-size proof), and 400 on an
+  invalid `language` value — every PDF check verifies the real `%PDF-`
+  magic bytes, not just a 200 status.
+- `apps/web/lib/auth/api-client.ts` — new `apiFetchBlob()`, the first
+  binary-response primitive in this app.
+  `apps/web/lib/customer-service/complaint-api.ts` — new
+  `downloadComplaintAcknowledgement()`.
+  `apps/web/app/(app)/complaints/page.tsx` — new "Download acknowledgement
+  (PDF)" button per row, triggers a real browser download via an
+  object-URL + synthetic `<a download>` click.
+- `apps/web/e2e/complaints.spec.ts` — 1 new Playwright test, proving the
+  WIRING (button click -> real api call -> a real browser `download`
+  event with the expected filename) against a mocked api response — this
+  item's own "web proves wiring, api proves behavior" split, the same one
+  item #6 used.
+
 ## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
@@ -1133,6 +1325,107 @@ same transient full-suite-contention class, not a repeat offender).
 `npm run typecheck`/`lint`/`test` (api) OK; no `build`/web gate applies
 (pure backend change).
 
+## Verification — item #7 (partial — complaint acknowledgement only)
+
+Touches `apps/api`, `apps/web`, `packages/db` (seed data only, no
+migration), `.github/workflows/ci.yml`, and `apps/api/Dockerfile` — the
+first Part F item to touch CI/deployment config, confirmed via `git diff
+--stat`. +8 new api unit tests (7 in `complaint-acknowledgement.
+template.spec.ts` + 1 added during review for single-quote escaping) → api
+unit **2343/2343** (from 2335). +1 new api e2e test (multiple assertions:
+permission/404/400 gating, AR/EN customer defaults, an explicit override,
+and DUAL producing a genuinely larger PDF, every case verified via the
+real `%PDF-` magic bytes) → full 62-file api e2e suite **312/312** (from
+311) — 307 passed on the first full-suite run; the other 5
+(`rbac.e2e-spec.ts` ×3 — the already-chronic flake, `audit.e2e-spec.ts`
+×1, `privacy-notice.e2e-spec.ts` ×1) hit timeout/MFA-timing issues under
+this session's own severe memory pressure (as low as 351-694MB free RAM
+on an 8GB machine, confirmed via `systeminfo`) and were re-confirmed clean
+in isolation. +1 new Playwright test (`complaints.spec.ts`, proving the
+download-button-to-real-browser-download wiring against a mocked api) →
+full web suite **298/298** (from 297, 232 non-`@a11y` + 66 `@a11y`). `npm
+run typecheck`/`lint`/`build`/`test` (api + web) OK.
+
+**A mandatory `@code-reviewer` pass caught 2 real BLOCKERs before this was
+considered done** — both fixed, not merely noted:
+
+1. **The feature was not actually deployable as first written.**
+   `playwright-core` has no browser-download step of its own (that
+   belongs to the separate `playwright` package); CI's `backend` job had
+   no Chromium install step at all (only the unrelated `frontend` job
+   did, on a separate runner); `apps/api/Dockerfile`'s runtime stage was
+   Alpine-based, and Playwright's bundled Chromium does not support musl
+   libc. Fixed: `.github/workflows/ci.yml`'s `backend` job gained an
+   `npx playwright-core install --with-deps chromium` step before
+   Integration tests; `apps/api/Dockerfile`'s `runner` stage switched
+   from Alpine to `node:20.19.0-slim` (glibc) with the same install
+   command run as root before `USER nestjs`. The rendering *mechanism*
+   had been verified empirically (see "What item #7 covers" above); the
+   *deployment* of that mechanism had not — a real gap the review
+   process, not the implementation process, caught.
+2. **`PdfRendererService` had no recovery path after a browser launch
+   failure or crash** — `browserPromise` cached a rejected promise or a
+   disconnected `Browser` forever, wedging every future document request
+   in the process behind the same stale failure. Fixed: both a failed
+   `chromium.launch()` and a live browser's `'disconnected'` event now
+   reset `browserPromise` to `null` (guarded by reference identity so a
+   late event from an already-replaced browser can't clobber a fresh
+   one), so the next call retries a genuine new launch.
+
+4 MINOR findings also fixed: `escapeHtml()` was missing a single-quote
+replacement (added, with a new regression test); `apiFetchBlob()`
+duplicated `apiFetch()`'s entire retry/error-handling block instead of
+sharing it (extracted into `fetchWithRetry()`); `categoryLabel()`'s
+"no category" branch had a dead `lang === 'en' ? '—' : '—'` conditional
+(simplified); `PdfRendererService.renderHtmlToPdf()` had no structural
+defense against a FUTURE document template introducing an external
+resource reference, which combined with `--no-sandbox` would be a real
+SSRF path — added `page.route('**/*', ...)` aborting every non-`data:`
+request, closing the class of risk before a second document type can
+introduce it, not just documenting the risk. One NIT (`@Header()`
+potentially leaking `Content-Type: application/pdf` onto an error
+response body) was read and judged genuinely cosmetic, left as-is.
+
+The review also POSITIVELY confirmed (not just silence): `escapeHtml()`
+coverage was already complete for every customer-controlled value before
+the review, verified via the dedicated injection unit test; no live SSRF
+path existed in the current template (no external references anywhere in
+it, checked directly); `Customer.classification` defaults to
+`CONFIDENTIAL` not `HIGHLY_CONFIDENTIAL`, and `Complaint.issue` is already
+shown unmasked on the existing `/complaints` list page to the same
+`complaint.log`-holding roles — this PDF download exposes nothing beyond
+what those roles already see on screen, so `sensitive-data-handling.md`'s
+watermarking/DLP triggers (scoped to Highly Confidential fields) do not
+apply; `DocumentTemplate` fallback text is byte-identical to the real
+seeded row, so a missing-row environment renders identically to a seeded
+one; the concurrency shape of the shared browser instance was sound
+(only the no-retry-after-failure half was not).
+
+**The Docker deployment fix IS independently verified — and verification
+caught a SECOND real bug the build alone did not.** Once memory pressure
+eased, `docker build -f apps/api/Dockerfile .` succeeded — but launching
+Chromium inside the built container as the unprivileged `nestjs` runtime
+user failed: `Executable doesn't exist at /nonexistent/.cache/
+ms-playwright/...`. Root cause: Playwright resolves its browser cache
+under `$HOME`, which differs between the ROOT user the Dockerfile's
+`RUN npx playwright-core install` step executes as and the unprivileged
+`nestjs` user `CMD` actually runs as (an `adduser --system` account has
+no real home directory — `$HOME` resolves to `/nonexistent`) — so the
+browser installed during the build was genuinely invisible at runtime.
+Fixed: `ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` pins the cache to a
+fixed, absolute path before the install step, plus a `chown -R
+nestjs:nodejs /ms-playwright` afterward so the unprivileged user (which
+did not do the install) can still read/execute it. Re-verified after the
+fix: rebuilt the image (a genuinely fresh Chromium download, not a stale
+cached layer — the earlier broken layer was invalidated by the Dockerfile
+edit) and directly launched Chromium inside the running container as
+`nestjs`, rendering a real bilingual PDF (`docker run --rm <image> node
+-e "..."`, verified `%PDF-` magic bytes on the output). This is exactly
+why "the build succeeded" and "the feature works in production" are
+different claims — a passing `docker build` proves the image compiles,
+not that a headless browser can actually launch as the unprivileged user
+CMD runs as.
+
 ## Next
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
@@ -1148,12 +1441,30 @@ that finding first. Same-script typo tolerance and `Insurer` search remain
 open, documented future work. Item #5 remains PARTIALLY complete —
 number/date formatting only; Hijri calendar and multi-currency
 (reinsurance) remain open, documented future work (see "What item #5 does
-NOT cover" above). Do not assume a future session can mark item #5 or item
-#6 fully closed without addressing its own deferred scope. Wait for the
-user's explicit go-ahead before resuming item #5's or item #6's remaining
-scope, starting item #7 (system-generated bilingual documents), or any
-other Part F item — do not self-select. Item #7 in particular has no
-document-generation infrastructure to build on at all yet, so it looks like
-its own multi-session effort; item #8 (the 4-state screenshot discipline)
-is a verification overlay on whichever of #5-7 land, not a standalone
-build.
+NOT cover" above). **Item #7 is now also PARTIALLY built** — complaint acknowledgement only,
+the first of 6 document types, plus the shared rendering infrastructure
+(`PdfRendererService`, `DocumentTemplateRepository`,
+`DocumentGenerationModule`) every future document type reuses. The other
+5 (quotation comparison, recommendation report, policy schedule summary,
+invoice, certificate) remain open, documented future work — each has real
+underlying data to build from (see "What item #7 does NOT cover" above),
+but none has its own HTML template, seed row, endpoint, or web entry
+point yet. Persistence (a real `Document` audit trail for a generated
+file) remains explicitly out of scope — this app has no object storage
+anywhere, a separate, larger gap than this item's own ask. Do not assume
+a future session can mark item #5, #6, or #7 fully closed without
+addressing its own deferred scope. Wait for the user's explicit go-ahead
+before resuming any of item #5/#6/#7's remaining scope, or starting any
+other Part F item — do not self-select. Item #8 (the 4-state screenshot
+discipline) is a verification overlay on whichever of #5-7 land, not a
+standalone build.
+
+Item #7's `apps/api/Dockerfile` fix (Alpine → `node:20.19.0-slim` for the
+Chromium runtime stage) is now independently verified end-to-end — a real
+container build PLUS a real Chromium launch as the unprivileged runtime
+user, not just a successful `docker build`. That verification caught and
+fixed a second real bug (`PLAYWRIGHT_BROWSERS_PATH` — see "Verification —
+item #7" above) that the build alone did not surface; a future session
+touching this Dockerfile again should re-verify the SAME way (build, then
+actually launch Chromium inside the running container as `nestjs`), not
+just confirm the build exits 0.
