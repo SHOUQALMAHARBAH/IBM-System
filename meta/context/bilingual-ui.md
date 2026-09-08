@@ -1,10 +1,11 @@
 # Bilingual UI (Part F, backlog Part 11)
 
 **Last verified:** 2026-09-08 (item #7 — system-generated bilingual
-documents — PARTIALLY built: complaint acknowledgement (the vertical
-slice proving the FIRST document-generation infrastructure this app has
-ever had — headless-Chromium HTML-to-PDF rendering, empirically verified;
-the previously-dormant `DocumentTemplate` model activated; a
+documents — **NOW COMPLETE, all 6 named document types built**:
+complaint acknowledgement (the vertical slice proving the FIRST
+document-generation infrastructure this app has ever had —
+headless-Chromium HTML-to-PDF rendering, empirically verified; the
+previously-dormant `DocumentTemplate` model activated; a
 `@code-reviewer` pass caught and fixed 2 real deployability/reliability
 BLOCKERs, and the actual Docker-build verification that followed caught
 and fixed a THIRD) PLUS quotation comparison (the second document type,
@@ -27,15 +28,33 @@ per-customer visibility before this item; the same
 `getByIdWithCustomer()` sibling-helper pattern reused a third time, now
 on `PolicyService`; the first item #7 document to render the `limits`/
 `sumsInsured` free-form JSON coverage figures, a flagged content
-decision). The full 63-file api e2e suite was attempted fresh for BOTH
-the recommendation-report and policy-schedule-summary rounds and did
-NOT complete either time — sustained host memory pressure (as low as
-~330-580MB free RAM on an 8GB machine), a real, acknowledged
-verification gap on both rounds, not a code issue; each round's
-targeted evidence (full unit suite + the directly-relevant e2e files,
-all green) stands in instead — the other 2 document types (invoice,
-certificate) remain open, documented future work — after item #6
-remainder — fuzzy transliteration matching (a
+decision) PLUS invoice (the fifth document type — the FIRST with a flat,
+book-wide `client-accounting.read` visibility permission rather than a
+scoped one, so no `getByIdWithCustomer()`-style helper was needed;
+deliberately excludes `commissionDeducted`/`netRemittance`/the insurer
+`Remittance` leg, a user-confirmed content decision) PLUS certificate of
+insurance (the sixth and FINAL document type — reuses the
+policy-schedule-summary slice's own `getByIdWithCustomer()` +
+`schedules.length === 0` gate, but with genuinely different, SHORTER
+content — a real proof-of-coverage convention, not the schedule
+summary's content under a new heading; a `@code-reviewer` pass found 1
+real BLOCKER — an unconditional "currently in force" attestation with no
+`policy.status` check, meaning a CANCELLED/EXPIRED policy could get a
+false certificate — fixed with a 422 refusal, and 1 MINOR — the invoice
+document was leaking the internal `Invoice.status` collection-cycle
+enum, fixed with a client-facing Outstanding/Paid label). The full
+63-file api e2e suite was attempted fresh for the recommendation-report
+and policy-schedule-summary rounds and did NOT complete either time —
+sustained host memory pressure (as low as ~330-580MB free RAM on an 8GB
+machine); the invoice/certificate round hit a DIFFERENT host constraint
+instead — a genuine disk-space exhaustion (C: drive reached 0 bytes
+free, root-caused to Docker Desktop's `docker_data.vhdx` never
+auto-shrinking) plus a Docker Desktop stuck-backend recurrence, both
+requiring the user's own hands-on fix — so the full suite was not
+attempted fresh that round either. Every round's targeted evidence (full
+unit suite + the directly-relevant e2e files, all green) stands in
+instead, the same accepted resolution used throughout item #7 — after
+item #6 remainder — fuzzy transliteration matching (a
 curated synonym table only; a distance-based fuzzy matcher was evaluated
 and REJECTED after empirical testing), item #6 itself — bilingual
 full-text search, item #4 — Arabic-first input (closed, one narrow
@@ -89,19 +108,24 @@ single module:
    this app (only narrow lookups inside RFQ/commission), so adding search to it would
    mean building its first browse screen from scratch.
 7. System-generated bilingual documents (quotation comparison, recommendation report,
-   policy schedule, invoices, certificates, complaint acknowledgements) — **PARTIALLY
-   built, this entry: complaint acknowledgement only**, the vertical slice chosen (via
-   `AskUserQuestion`) to prove the shared rendering pipeline before extending to the
-   other 5. `Document` (Process #70) is version/classification METADATA tracking, not a
-   generator — this item builds the FIRST real document-generation infrastructure this
-   app has ever had (see "What item #7 covers" below), including activating the
-   previously-dormant `DocumentTemplate` model (Part 11.2).
+   policy schedule, invoices, certificates, complaint acknowledgements) — **BUILT, all
+   6 named document types, this entry CLOSES the item.** Started with complaint
+   acknowledgement (via `AskUserQuestion`, the vertical slice chosen to prove the
+   shared rendering pipeline first), then quotation comparison, recommendation report,
+   policy schedule summary, invoice, and finally certificate of insurance. `Document`
+   (Process #70) is version/classification METADATA tracking, not a generator — this
+   item built the FIRST real document-generation infrastructure this app has ever had
+   (see "What item #7 covers" below), including activating the previously-dormant
+   `DocumentTemplate` model (Part 11.2). Real persistence / a `Document` audit trail
+   for a generated file remains explicit, documented future work — this app has no
+   real object storage anywhere.
 8. Four-state (loading/empty/error/populated) screenshot evidence per screen — a
    verification DISCIPLINE overlay on 1-7, not a separate build item.
 
 Worked one item at a time, the Part D/E pacing convention — this file now covers
-items #1-7 (item #4 CLOSED with one narrow, documented exception; items #5, #6, and #7
-PARTIAL, by explicit user scoping decision). Item #8 is unbuilt; do not
+items #1-7 (item #4 CLOSED with one narrow, documented exception; items #5 and #6
+PARTIAL, by explicit user scoping decision; item #7 CLOSED — all 6 document types
+built). Item #8 is unbuilt; do not
 assume it is covered by any earlier item's own infrastructure without
 checking that item's own "does NOT cover" section below.
 
@@ -657,7 +681,7 @@ new fuzzy-matching machinery or a schema migration:
   re-attempting a fuzzy-distance design; the ceiling is inherent to the
   algorithm class, not this implementation.
 
-## What item #7 covers (PARTIAL — complaint acknowledgement + quotation comparison + recommendation report + policy schedule summary, 4 of 6 document types)
+## What item #7 covers (COMPLETE — all 6 document types built: complaint acknowledgement, quotation comparison, recommendation report, policy schedule summary, invoice, certificate of insurance)
 
 Item #7's own bullet names 6 document types of very different data
 richness. Presented with a research spike's findings before implementing,
@@ -666,10 +690,10 @@ assumed — see below), generate-on-demand with no persistence (this app has
 NO real object storage anywhere — `Document.storageRef` is an opaque
 string the CALLER already has to have gotten from somewhere; nothing ever
 writes real bytes to real storage), derive "certificate" from
-`Policy`+`PolicySchedule` when that type is eventually built (deferred,
-not built this pass), and **complaint acknowledgement as the first
-document type** — simplest real data, lowest risk way to prove the
-pipeline end-to-end.
+`Policy`+`PolicySchedule` (built last, see "What item #7's
+certificate-of-insurance slice covers" below), and **complaint
+acknowledgement as the first document type** — simplest real data,
+lowest risk way to prove the pipeline end-to-end.
 
 - **Rendering mechanism — empirically tested against real bilingual
   content, not assumed.** A real HTML page containing Arabic (with an
@@ -751,20 +775,6 @@ pipeline end-to-end.
 
 ## What item #7 does NOT cover (read before assuming otherwise — explicitly deferred future work)
 
-- **The other 2 document types** — invoice, certificate. Certificate has
-  real underlying data to build from (`Policy`+`PolicySchedule` again, no
-  dedicated certificate data model exists — the same data the
-  policy-schedule-summary slice just used); invoice has its own `Invoice`
-  model. The SHARED infrastructure this item built (`PdfRendererService`,
-  `DocumentTemplateRepository`, `DocumentGenerationModule`, and
-  `document-html.util.ts`'s `escapeHtml`/`formatDocumentDate`/
-  `formatDocumentMoney`/`formatDocumentBiPeriod`/`formatDocumentPercent`/
-  `DOCUMENT_BASE_CSS`/`DocumentLanguage` — the last two promoted to
-  shared when the THIRD document type needed them, the same "promote
-  before the next one forks its own copy" discipline the first→second
-  promotion already established) is reusable for both, but neither has
-  its own HTML template, `DocumentTemplate` seed row, endpoint, or web
-  entry point yet.
 - **Persistence / a `Document` audit trail for a generated file** — out
   of scope by user decision. This app has no real object storage
   anywhere; building one was judged a separate, larger gap than this
@@ -1004,6 +1014,121 @@ model needed.
   `schedules.length > 0` — mirroring the api's own data-availability
   gate in the UI, the same pattern the recommendation slice's
   `blockedFromSend` gating already established.
+
+## What item #7's invoice slice covers
+
+The fifth document type, chosen next by the user (who asked to build
+invoice and certificate in the same sitting — the first time item #7's
+"one document type at a time" pacing bundled two).
+
+- **A genuinely new visibility shape among the 6 document types — `Invoice`
+  reads are gated on a FLAT, book-wide `client-accounting.read` permission,
+  not a scoped one.** Confirmed by re-reading `InvoiceService`'s own header
+  comment before building, not assumed: "Book-wide: `invoice.create` /
+  `client-accounting.read` are Finance / cross-book reporting permissions —
+  there is no per-owner visibility filter (same as `claims-analytics.
+  view`)." Unlike Policy/ComparisonMatrix/Recommendation (each with their
+  own `getByIdWithCustomer()`-style visibility-preserving-read helper),
+  `InvoiceDocumentService` reads `InvoiceRepository`/`CustomerRepository`/
+  `PolicyRepository` directly — the SAME flat-permission shape `Complaint`
+  has, the first item #7 document since the very first slice to use it.
+  `GET /invoices/:id/document?language=AR|EN|DUAL` uses the identical
+  `client-accounting.read` permission `InvoiceController.get()`/`list()`
+  already use, so it exposes nothing beyond what those endpoints already
+  do.
+- **Content scope — a flagged decision, confirmed via `AskUserQuestion`
+  before building.** `FinanceSection.tsx`'s pre-existing "Billing" block
+  shows Finance staff `commissionDeducted` (the netting figure) and, once
+  collected/remitted, `netRemittance`/the insurer `Remittance` leg — this
+  document deliberately EXCLUDES all three. They describe the BROKER's own
+  internal economics with the insurer, not what the client is being
+  billed for — the same "internal governance metadata stays internal"
+  precedent the recommendation-report document already established for
+  its own raw `coiCommissionDiffPercent`. The client's OWN collection
+  `Receipt` (their own payment, not the insurer's remittance) IS shown
+  when one exists — genuinely client-relevant, not internal.
+- **`Invoice.policyId` is schema-nullable** (though every invoice #31
+  creates today always carries one) — the document tolerates a null
+  policy (renders `—` for policy number/insurance line/insurer) rather
+  than assuming it away.
+- **A `@code-reviewer` MINOR, caught and fixed**: the document initially
+  rendered the raw internal `Invoice.status` enum
+  (`INVOICED → COLLECTED → RECONCILED → REMITTED`, plus
+  `EXCEPTION_RAISED`/`EXCEPTION_RESOLVED`) verbatim — the SAME class of
+  internal-economics leak the content-scope decision above was supposed
+  to prevent, since that enum describes the broker's own settlement
+  progress with the insurer, not the client's payment status. Fixed:
+  replaced with a client-facing "Outstanding"/"Paid" label derived from
+  whether `data.receipt` is present — the client only needs to know
+  whether THEIR payment is outstanding or received.
+- **Web**: `FinanceSection.tsx`'s existing "Billing" block gained a
+  "Download invoice (PDF)" button, rendered once an invoice exists (no
+  separate data-availability gate needed beyond that — unlike the
+  certificate/schedule-summary's `schedules.length > 0`, an `Invoice` row
+  either exists or it doesn't).
+
+## What item #7's certificate-of-insurance slice covers
+
+The sixth and FINAL document type, closing item #7. Confirms the
+backlog's own "Derive it from Policy + PolicySchedule" scoping decision
+(made when the policy-schedule-summary slice was built) applies here too
+— the same underlying data, but deliberately DIFFERENT, SHORTER content.
+
+- **A genuine Certificate of Insurance convention, confirmed via
+  `AskUserQuestion` before building — NOT the schedule-summary document's
+  content under a new heading.** A certificate of insurance is a short
+  proof-of-coverage document, often handed to a third party (a landlord,
+  a regulator, a lender) rather than kept as a billing/schedule record:
+  insured, policy number, insurer, insurance line, period of insurance,
+  and a single-line sum-insured summary — deliberately NO premium, tax,
+  commission, or the full limits/named-perils/extensions breakdown the
+  schedule summary already covers in detail. `sumsInsured` (the same
+  free-form JSON shape `limits`/`sumsInsured` always are) is rendered as
+  ONE summary line (`key: money-formatted-value` per entry, joined by
+  "; ") rather than a full table, since this document is a short proof of
+  coverage, not an itemized breakdown.
+- **Reuses the SAME `PolicyService.getByIdWithCustomer()` visibility read
+  and `schedules.length === 0 → 422` data-availability gate** the
+  schedule-summary slice already established — a certificate has nothing
+  to certify until Process 19 issuance records the first schedule
+  either. A NEW, SEPARATE endpoint, `GET /policies/:id/certificate` —
+  the pre-existing `GET /policies/:id/document` stays the
+  policy-schedule-summary document; Policy is the first entity in item #7
+  to carry two distinct document types, each with its own endpoint.
+- **`coverageFigureEntries()` promoted from a private function into
+  `policy.config.ts`** (a byte-identical relocation, not a rewrite) —
+  the policy-schedule-summary slice's own `entriesOf()` re-derives
+  `assertCoverageFigures()`'s shape for display; the certificate needed
+  the exact same read as a SECOND consumer, the same "promote on a second
+  consumer" discipline `document-html.util.ts` itself already follows
+  for its own formatters.
+- **A `@code-reviewer` BLOCKER, caught and fixed before this was
+  considered done**: the certificate template made an UNCONDITIONAL,
+  present-tense "currently in force" attestation with NO check on
+  `policy.status` anywhere in either the template or the document
+  service. `PolicyStatus` has real terminal states, `CANCELLED` and
+  `EXPIRED` — and the gate this document reuses (`schedules[0]`,
+  `schedules.length === 0 → 422`) does NOT exclude them: the
+  policy-schedule-summary slice's own design explicitly renders a
+  cancelled policy's last-closed schedule as an "as at" historical
+  snapshot rather than refusing outright. That precedent does NOT carry
+  over here — the schedule-summary document only ever presents
+  dates/figures NEUTRALLY (a plain "Schedule Period" table); the
+  certificate makes an AFFIRMATIVE claim, and its own purpose is being
+  handed to a third party specifically to rely on as proof of active
+  coverage. Fixed by refusing (422, the same shape the existing
+  data-availability gate already uses) for `CANCELLED`/`EXPIRED`, rather
+  than inventing a new "historical certificate" content shape with no
+  sourced convention — a certificate of insurance whose whole purpose is
+  proving CURRENT cover has no sourced meaning for a policy that no
+  longer has any. Verified with a new e2e assertion (set the policy to
+  each terminal status directly via `prisma.policy.update` — no exposed
+  endpoint drives either transition yet — and confirm 422 with a message
+  naming the status).
+- **Web**: `PolicySection.tsx`'s existing "Coverage schedule" block
+  gained a second button, "Download certificate (PDF)", next to
+  "Download schedule summary (PDF)" — same `schedules.length > 0` gate as
+  its sibling.
 
 ## Where the code lives
 
@@ -1573,6 +1698,112 @@ new permission, no new production dependency:
   mockRfqApi pattern the comparison/recommendation slices' own
   Playwright tests already established.
 
+**Item #7's invoice slice** (the 5th document type) — no schema
+migration, no new permission, no new production dependency:
+
+- `apps/api/src/modules/finance/invoice-document.template.ts` — new.
+  Pure function, `buildInvoiceHtml()`. `invoice-document.template.spec.ts`
+  — 12 new unit tests (AR-only, EN-only, DUAL-both-Arabic-first,
+  reference/policy numbers, insurer/line/dates/the four money figures, a
+  client-facing Outstanding/Paid status label — NEVER the raw internal
+  `Invoice.status` enum, em-dash rows for a null policy/insurance
+  line/insurer, the client's own receipt section when one exists vs.
+  omitted when it doesn't, HTML-injection escaping, a non-finite money
+  value degrading gracefully).
+- `apps/api/src/modules/finance/invoice-document.service.ts` — new.
+  `InvoiceDocumentService.generate()` — reads `InvoiceRepository`/
+  `CustomerRepository`/`PolicyRepository` directly (no
+  `getByIdWithCustomer()`-style helper — `Invoice` visibility is a flat,
+  book-wide `client-accounting.read` permission, confirmed via
+  `InvoiceService`'s own header comment), reads raw `Prisma.Decimal`
+  fields straight off the repository row, builds the HTML, renders via
+  `PdfRendererService`.
+- `apps/api/src/modules/finance/invoice.controller.ts` — new
+  `GET :id/document` route, `client-accounting.read` permission (the
+  SAME permission `get()`/`list()` already use), returns a
+  `StreamableFile`. `finance.module.ts` — gained `CustomerModule` +
+  `DocumentGenerationModule` imports (`PolicyRepository` was already
+  available via the pre-existing `PolicyModule` import), registers
+  `InvoiceDocumentService`.
+- `packages/db/prisma/seed-data/document-templates.ts` — new `invoice`
+  row (9th template overall, fifth of the 6 real item #7 types).
+- `apps/api/test/invoice.e2e-spec.ts` — 1 new test (multiple
+  assertions): permission (403) / unknown-id (404) / AR/EN
+  customer-preference defaults / an explicit override / DUAL producing a
+  genuinely LARGER PDF / 400 on an invalid `language` value / an
+  `EXTERNAL_AUDITOR` (book-wide `client-accounting.read`, no ownership
+  relation to the customer at all) reaching it too — proving the
+  permission is genuinely flat, not scoped / the client's own receipt
+  appearing once collected.
+- `apps/web/lib/finance/invoice-api.ts` — new `downloadInvoiceDocument()`.
+  `apps/web/components/policy/FinanceSection.tsx` — new "Download
+  invoice (PDF)" button inside the existing "Billing" block, rendered
+  once an invoice exists.
+- `apps/web/e2e/rfq.spec.ts` — extended the existing "raises a premium
+  invoice" Playwright test with a specific `/invoices/*/document**`
+  route (registered after `mockRfqApi`'s own broader `/invoices**`
+  route) and a download-button assertion.
+
+**Item #7's certificate-of-insurance slice** (the 6th and FINAL document
+type) — no schema migration, no new permission, no new production
+dependency:
+
+- `apps/api/src/modules/policy/policy.config.ts` — new, PROMOTED
+  `CoverageFigureEntry` type + `coverageFigureEntries()` function (a
+  byte-identical relocation of a private `entriesOf()` that used to live
+  only in `policy-schedule-summary-document.service.ts`, needed here as
+  a second consumer).
+- `apps/api/src/modules/policy/certificate-of-insurance.template.ts` —
+  new. Pure function, `buildCertificateOfInsuranceHtml()`.
+  `certificate-of-insurance.template.spec.ts` — 11 new unit tests
+  (AR-only, EN-only, DUAL-both-Arabic-first, reference/policy/insurer/
+  line/period, sum-insured as a single money-formatted summary line,
+  NEVER premium/tax/fees/commission/named-perils/extensions — a
+  genuinely different content shape than the schedule summary, em-dash/
+  "—" rows never omitted, "ongoing" for an open period in each language,
+  HTML-injection escaping, a non-numeric sum-insured value degrading
+  gracefully, no internal governance metadata).
+- `apps/api/src/modules/policy/certificate-of-insurance-document.
+  service.ts` — new. `CertificateOfInsuranceDocumentService.generate()` —
+  calls `PolicyService.getByIdWithCustomer()` (the SAME visibility read
+  the schedule-summary service uses), the SAME `schedules[0]`
+  data-availability gate, PLUS a NEW gate refusing (422) when
+  `policy.status` is `CANCELLED`/`EXPIRED` — the `@code-reviewer` BLOCKER
+  fix (see "What item #7's certificate-of-insurance slice covers"
+  above for why the schedule-summary slice's own "render a cancelled
+  policy's last schedule anyway" precedent does NOT carry over to an
+  affirmative-attestation document).
+- `apps/api/src/modules/policy/policy.controller.ts` — new
+  `GET :id/certificate` route (a SEPARATE route from the pre-existing
+  `:id/document`), `policy.read` permission, returns a `StreamableFile`.
+  `policy.module.ts` — registers `CertificateOfInsuranceDocumentService`
+  (no new module import — `DocumentGenerationModule` was already
+  imported for the schedule-summary slice).
+- `packages/db/prisma/seed-data/document-templates.ts` — new
+  `certificate_of_insurance` row (10th template overall, sixth and
+  final of the 6 real item #7 types).
+- `apps/api/test/policy.e2e-spec.ts` — 1 new test (multiple assertions):
+  the same permission/404/cross-owner-404/cross-owner-Manager-200/
+  AR-EN-DUAL/invalid-language matrix the schedule-summary test already
+  proved, PLUS the new CANCELLED/EXPIRED → 422 proof (the policy is set
+  to each terminal status directly via `prisma.policy.update` — no
+  exposed endpoint drives either transition yet, the same "set the row
+  directly to reach an unbuilt state" pattern `invoice.e2e-spec.ts`
+  already used for backdating `dueDate`), PLUS a same-policy PDF-size
+  comparison proving the certificate is genuinely smaller/different
+  content than the schedule-summary document, not the same content under
+  a new heading.
+- `apps/web/lib/policy/policy-api.ts` — new
+  `downloadPolicyCertificateDocument()`.
+  `apps/web/components/policy/PolicySection.tsx` — new "Download
+  certificate (PDF)" button next to the existing "Download schedule
+  summary (PDF)" button, same `schedules.length > 0` gate.
+- `apps/web/e2e/rfq.spec.ts` — extended the SAME policy-placement
+  Playwright test the schedule-summary slice already extended: a second
+  specific route (`/policies/*/certificate**`), a second "button absent
+  before a schedule exists" assertion, a second download-and-filename
+  assertion.
+
 ## A real regression caught while verifying item #1
 
 Playwright's `page.route("**/leads**", ...)` in the new spec's first draft ALSO matched
@@ -2049,6 +2280,76 @@ the most recent prior round (recommendation report) settled on under
 the identical constraint. The next session touching `apps/api` or
 `apps/web` should run both full suites fresh once host memory allows.
 
+## Verification — item #7's invoice + certificate-of-insurance slices
+
+Touches `apps/api`, `apps/web`, `packages/db` (seed data only, no
+migration) — confirmed via `git diff --stat`. +23 new api unit tests
+(`invoice-document.template.spec.ts` +12, one of which was added during
+the `@code-reviewer` fix round; `certificate-of-insurance.template.spec.ts`
++11) → api unit **2416/2417** (from 2394; the one failure is
+`app.controller.spec.ts`, confirmed a pre-existing, zero-diff, fully
+isolated failure unrelated to this round — `git diff` on that file and
+its own controller show no changes, and it fails the identical way run
+completely alone). +2 new api e2e tests, each with multiple assertions:
+`invoice.e2e-spec.ts` (permission [403]/unknown-id [404]; AR customer
+default, an explicit EN override, DUAL producing a genuinely larger PDF
+than AR alone; 400 on an invalid `language` value; an
+`EXTERNAL_AUDITOR` — book-wide `client-accounting.read`, no ownership
+relation to the customer at all — reaching the document endpoint,
+proving the permission is genuinely flat; the client's own receipt
+appearing once collected) and `policy.e2e-spec.ts` (the same
+permission/404/cross-owner-404/cross-owner-Manager-200/AR-EN-DUAL/
+invalid-language matrix the schedule-summary test already proved for
+`:id/certificate`, PLUS the new CANCELLED → 422 and EXPIRED → 422 proofs
+with a message naming the status, PLUS a same-policy PDF-size comparison
+proving the certificate document is genuinely smaller than the
+schedule-summary document for the identical policy) — targeted run of
+the 2 directly-touched files (`invoice.e2e-spec.ts` 9/9,
+`policy.e2e-spec.ts` 7/7) **16/16 green**, re-confirmed a second time
+after the `@code-reviewer` fix round. +richer assertions inside 2
+pre-existing Playwright tests in `rfq.spec.ts` (no new test cases: the
+policy-placement test gained a second download-button assertion for the
+certificate; the premium-invoice test gained a download-button assertion
+for the invoice) — full `rfq.spec.ts` file **29/29 green**, required a
+fresh `npm run build` first (Playwright's `webServer` serves the LAST
+build's output, not live source — the exact same recurring gotcha this
+file's own history already documents twice). Full api+web
+`typecheck`/`lint`/`build` clean.
+
+**A `@code-reviewer` pass found 1 BLOCKER + 1 MINOR, both fixed before
+this was considered done** — see "What item #7's
+certificate-of-insurance slice covers" and "What item #7's invoice
+slice covers" above for the full detail. In short: the certificate made
+an unconditional "currently in force" attestation with no `policy.status`
+check (fixed with a 422 refusal for `CANCELLED`/`EXPIRED`); the invoice
+leaked the internal `Invoice.status` collection-cycle enum despite this
+same document's own stated commission/remittance-exclusion decision
+(fixed with a client-facing Outstanding/Paid label derived from the
+receipt).
+
+**A genuine host-level disk-space crisis mid-session consumed
+significant time, unrelated to the code**: the C: drive reached 0 bytes
+free (`docker_data.vhdx`, Docker Desktop's WSL2 backing disk, had grown
+to ~42GB and never auto-shrinks — `docker builder prune` freed 22.82GB
+INSIDE the VM but only ~640MB came back on the host, consumed again
+within minutes), immediately followed by a separate Docker Desktop
+stuck-backend recurrence (the same failure mode as
+[[project_docker_desktop_stuck_backend]] in project memory — diagnosed
+this time via the backend log's last-line timestamp being 48 minutes
+stale vs. the actual clock, not just a stale PID). Both required the
+user's own hands-on fix outside this session (no admin rights available
+here to run the elevated VHDX-compaction step); a full tray quit
+resolved the stuck backend. Given that time cost, and this host's own
+repeated prior failure to complete either full suite under sustained
+MEMORY pressure across every earlier item #7 round, **the full 63-file
+api e2e suite and the full 60+-file web suite were NOT attempted fresh
+this round** — the targeted evidence above stands in, the same accepted
+resolution every earlier document-type round used. Full diagnostic
+detail (exact commands, why builder-prune alone doesn't free host disk
+space, how to tell a "responding" process from a genuinely-alive one)
+saved separately in project memory:
+`project_docker_vhdx_disk_full.md`.
+
 ## Next
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
@@ -2064,38 +2365,47 @@ that finding first. Same-script typo tolerance and `Insurer` search remain
 open, documented future work. Item #5 remains PARTIALLY complete —
 number/date formatting only; Hijri calendar and multi-currency
 (reinsurance) remain open, documented future work (see "What item #5 does
-NOT cover" above). **Item #7 is now on 4 of 6 document types** —
-complaint acknowledgement, then quotation comparison (which reused the
-first's shared rendering infrastructure — `PdfRendererService`,
-`DocumentTemplateRepository`, `DocumentGenerationModule` — unchanged and
-additionally promoted `escapeHtml`/date+money formatting/base CSS into a
-genuinely shared `document-html.util.ts`, a `@code-reviewer` MINOR
-finding on the first slice acted on proactively rather than after a
-third document type forked its own copy), then the recommendation
-report (see "What item #7's recommendation-report slice covers" above)
-— gated on the SAME business-state check `Recommendation.send()` itself
-enforces (`blockedFromSend`), a user-confirmed design decision specific
-to that document type — then the policy schedule summary (see "What
-item #7's policy-schedule-summary slice covers" above) — gated instead
-on a plain data-availability check (`schedules.length === 0`), since
+NOT cover" above). **Item #7 IS NOW COMPLETE — all 6 document types
+built** — complaint acknowledgement, then quotation comparison (which
+reused the first's shared rendering infrastructure —
+`PdfRendererService`, `DocumentTemplateRepository`,
+`DocumentGenerationModule` — unchanged and additionally promoted
+`escapeHtml`/date+money formatting/base CSS into a genuinely shared
+`document-html.util.ts`, a `@code-reviewer` MINOR finding on the first
+slice acted on proactively rather than after a third document type
+forked its own copy), then the recommendation report (see "What item
+#7's recommendation-report slice covers" above) — gated on the SAME
+business-state check `Recommendation.send()` itself enforces
+(`blockedFromSend`), a user-confirmed design decision specific to that
+document type — then the policy schedule summary (see "What item #7's
+policy-schedule-summary slice covers" above) — gated instead on a plain
+data-availability check (`schedules.length === 0`), since
 `Policy`+`PolicySchedule` already enforces real per-customer visibility
-the same way `ComparisonMatrix`/`Recommendation` do. A real lesson from
-the comparison slice, re-applied and re-confirmed on every slice since,
-worth re-reading before building either of the remaining 2 (invoice,
-certificate): **check whether the underlying entity already enforces
-per-customer visibility beyond a flat permission** (`Complaint` does
-not; `ComparisonMatrix`, `Recommendation`, and `Policy` all do) — the
-document endpoint must inherit that check via the entity's own service,
-never by querying its repository directly, or a real access-control
-regression follows. Persistence (a real `Document` audit trail for a
-generated file) remains explicitly out of scope — this app has no
-object storage anywhere, a separate, larger gap than this item's own
-ask. Do not assume a future session can mark item #5, #6, or #7 fully
+the same way `ComparisonMatrix`/`Recommendation` do — then the invoice
+(see "What item #7's invoice slice covers" above), the first document in
+the item to have a FLAT, book-wide visibility permission rather than a
+scoped one — and finally the certificate of insurance (see "What item
+#7's certificate-of-insurance slice covers" above), which reused the
+schedule summary's own visibility read and data-availability gate but
+needed a genuinely new `policy.status` check after a `@code-reviewer`
+BLOCKER caught an unconditional false attestation risk for a
+CANCELLED/EXPIRED policy. A real lesson from the comparison slice,
+re-applied and re-confirmed on every slice since: **check whether the
+underlying entity already enforces per-customer visibility beyond a flat
+permission** (`Complaint` and `Invoice` do not; `ComparisonMatrix`,
+`Recommendation`, and `Policy` all do) — the document endpoint must
+inherit that check via the entity's own service, never by querying its
+repository directly, or a real access-control regression follows.
+Persistence (a real `Document` audit trail for a generated file) remains
+explicitly out of scope — this app has no object storage anywhere, a
+separate, larger gap than this item's own ask; do not self-select
+building it. Item #5 and #6 remain PARTIALLY built (see their own
+sections above) — do not assume a future session can mark either fully
 closed without addressing its own deferred scope. Wait for the user's
-explicit go-ahead before resuming any of item #5/#6/#7's remaining
-scope, or starting any other Part F item — do not self-select. Item #8
-(the 4-state screenshot discipline) is a verification overlay on
-whichever of #5-7 land, not a standalone build.
+explicit go-ahead before resuming any of item #5/#6's remaining scope,
+or starting item #8 — do not self-select. Item #8 (the 4-state
+screenshot discipline) is the only item left in Part F, a verification
+overlay on items #1-7, not a standalone build.
 
 Item #7's `apps/api/Dockerfile` fix (Alpine → `node:20.19.0-slim` for the
 Chromium runtime stage) is now independently verified end-to-end — a real
