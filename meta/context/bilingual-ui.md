@@ -1,16 +1,18 @@
 # Bilingual UI (Part F, backlog Part 11)
 
 **Last verified:** 2026-09-08 (item #7 — system-generated bilingual
-documents — PARTIALLY built: complaint acknowledgement only, the vertical
+documents — PARTIALLY built: complaint acknowledgement (the vertical
 slice proving the FIRST document-generation infrastructure this app has
-ever had (headless-Chromium HTML-to-PDF rendering, empirically verified;
-the previously-dormant `DocumentTemplate` model activated) — a
+ever had — headless-Chromium HTML-to-PDF rendering, empirically verified;
+the previously-dormant `DocumentTemplate` model activated; a
 `@code-reviewer` pass caught and fixed 2 real deployability/reliability
-BLOCKERs before this was considered done, not just implementation-time
-self-review, and the actual Docker-build verification that followed
-caught and fixed a THIRD real bug (a browser-cache-path mismatch between
-the root build user and the unprivileged runtime user) that neither the
-review nor a merely-successful `docker build` surfaced; the other 5
+BLOCKERs, and the actual Docker-build verification that followed caught
+and fixed a THIRD) PLUS quotation comparison (the second document type,
+reusing all of the first's shared infrastructure, promoting
+`escapeHtml`/date/money formatting/CSS into a genuinely shared
+`document-html.util.ts`, and adding a new customer-visibility-preserving
+`ComparisonService.getByIdWithCustomer()` rather than shortcutting around
+`ComparisonMatrix`'s existing per-customer access rule) — the other 4
 document types remain open, documented future
 work — after item #6 remainder — fuzzy transliteration matching (a
 curated synonym table only; a distance-based fuzzy matcher was evaluated
@@ -634,7 +636,7 @@ new fuzzy-matching machinery or a schema migration:
   re-attempting a fuzzy-distance design; the ceiling is inherent to the
   algorithm class, not this implementation.
 
-## What item #7 covers (PARTIAL — complaint acknowledgement only, the chosen vertical slice)
+## What item #7 covers (PARTIAL — complaint acknowledgement + quotation comparison, 2 of 6 document types)
 
 Item #7's own bullet names 6 document types of very different data
 richness. Presented with a research spike's findings before implementing,
@@ -728,32 +730,110 @@ pipeline end-to-end.
 
 ## What item #7 does NOT cover (read before assuming otherwise — explicitly deferred future work)
 
-- **The other 5 document types** — quotation comparison, recommendation
-  report, policy schedule summary, invoice, certificate. Each has real
-  underlying data to build from (`ComparisonMatrix`+`ComparisonMatrixRow`
-  +`Quotation`; `Recommendation`; `Policy`+`PolicySchedule`; `Invoice`;
+- **The other 4 document types** — recommendation report, policy
+  schedule summary, invoice, certificate. Each has real underlying data
+  to build from (`Recommendation`; `Policy`+`PolicySchedule`; `Invoice`;
   `Policy`+`PolicySchedule` again for certificate, no dedicated
   certificate data model exists) — the SHARED infrastructure this item
   built (`PdfRendererService`, `DocumentTemplateRepository`,
-  `DocumentGenerationModule`) is reusable for all 5, but none has its own
-  HTML template, `DocumentTemplate` seed row, endpoint, or web entry
-  point yet.
+  `DocumentGenerationModule`, and now `document-html.util.ts`'s
+  `escapeHtml`/`formatDocumentDate`/`formatDocumentMoney`/
+  `DOCUMENT_BASE_CSS`/`DocumentLanguage` — promoted to shared the moment
+  the SECOND document type needed them, per a `@code-reviewer` MINOR
+  finding on the first) is reusable for all 4, but none has its own HTML
+  template, `DocumentTemplate` seed row, endpoint, or web entry point
+  yet.
 - **Persistence / a `Document` audit trail for a generated file** — out
   of scope by user decision. This app has no real object storage
   anywhere; building one was judged a separate, larger gap than this
-  item's own ask. A generated acknowledgement is NOT retrievable later
-  except by generating it again.
+  item's own ask. A generated document is NOT retrievable later except
+  by generating it again.
 - **`Insurer` documents / any document type for an entity with no browse
-  screen** — not applicable to complaint acknowledgement (Complaints has
-  a real list page), but will recur for any future document type tied to
-  an entity in the same gap class item #4/#6 already hit.
-- **A picker in the web UI for language/dual mode** — the download button
-  always requests the customer's own default language; `DUAL` is only
-  reachable by calling the api directly (e.g. `?language=DUAL`) for now,
-  not from a UI control.
+  screen** — not applicable to either document type built so far
+  (Complaints and RFQs both have real list/detail pages), but will recur
+  for any future document type tied to an entity in the same gap class
+  item #4/#6 already hit.
+- **A picker in the web UI for language/dual mode** — both download
+  buttons always request the customer's own default language; `DUAL` is
+  only reachable by calling the api directly (e.g. `?language=DUAL`) for
+  now, not from a UI control.
 - **Hijri dates, multi-currency** — unrelated, still item #5's own
-  deferred scope; the acknowledgement template's dates are Gregorian,
-  matching every other date in this app today.
+  deferred scope; every document's dates are Gregorian and every amount
+  stays in its own record's actual currency, matching every other date/
+  amount in this app today.
+- **A dedicated Process 14 e2e file auditing the pre-existing `POST
+  /comparison-matrices` build endpoint or `GET` read endpoints** —
+  `comparison.e2e-spec.ts` (new, this entry) is scoped to what THIS
+  item's own `GET :id/document` endpoint needs exercised (including
+  comparison's pre-existing visibility rule, which the document endpoint
+  had to inherit correctly); it is not a retroactive audit of Process 14
+  itself, which had zero e2e coverage of its own before this item and
+  still has none beyond what this item incidentally exercises as setup.
+
+## What item #7's quotation-comparison slice covers
+
+The second document type, chosen next by the user. Reuses ALL of the
+first document type's shared infrastructure unchanged
+(`PdfRendererService`, `DocumentTemplateRepository`,
+`DocumentGenerationModule`) — no new rendering mechanism, no new
+production dependency. Two things this slice added that the first one
+didn't need:
+
+- **Shared HTML-template utilities promoted out of `complaint-
+  acknowledgement.template.ts`** into a new `apps/api/src/modules/
+  document-generation/document-html.util.ts` — `escapeHtml`,
+  `formatDocumentDate`, a NEW `formatDocumentMoney` (mirrors `apps/web/
+  lib/i18n/format.ts#formatMoney()`'s exact null/non-finite contract and
+  `'ar'`/`'en-GB'` locale tags, the api-side equivalent since
+  `apps/api` cannot import `apps/web`'s own utility), `DOCUMENT_BASE_CSS`,
+  and the `DocumentLanguage` type — plus a shared `DocumentLanguageQueryDto`
+  (`document-generation/dto/`) replacing the complaint-specific one. This
+  is the exact moment a `@code-reviewer` MINOR finding on the FIRST
+  document type anticipated ("promote shared pieces before a second
+  template forks its own copy") — done proactively here, not after a
+  divergence was found. `complaint-acknowledgement.template.ts` was
+  refactored to import from the shared file; its own 8 unit tests were
+  re-run afterward and still pass byte-for-byte, confirming the
+  extraction changed nothing observable.
+- **`ComparisonService.getByIdWithCustomer()` — a NEW, security-relevant
+  method, not a shortcut around the existing service.** Unlike
+  `Complaint` (whose `complaint.log` permission is genuinely flat/
+  unscoped — confirmed by re-reading `ComplaintService.get()` before
+  copying its shortcut pattern), `ComparisonMatrix` access already
+  enforces real per-customer visibility (`assertCustomerVisible` — the
+  matrix inherits its RFQ's Opportunity's Customer's ownership rule; a
+  Sales Officer can only reach a comparison for a customer they own,
+  unless they hold a cross-owner role). Generating a document from the
+  bare `ComparisonRepository` (the complaint precedent's own shortcut)
+  would have SKIPPED this check entirely — a real access-control
+  regression, not a hypothetical one. `getByIdWithCustomer()` goes
+  through the SAME private `loadVisibleRfq()` helper `getById()` already
+  used (extended to also return `customerId`, an addition with zero
+  behavior change for existing callers) — the document endpoint has
+  IDENTICAL visibility to the existing read endpoint, verified directly:
+  a Sales Officer who does not own the customer gets 404 from the new
+  `GET :id/document` endpoint despite holding `comparison.read`, while a
+  Branch/Department Manager (a cross-owner role) reaches it regardless of
+  ownership.
+- **Table columns mirror `apps/web/components/comparison/
+  ComparisonSection.tsx`'s own existing columns exactly** (Insurer /
+  Premium / Deductible / Liability limit / BI period / Commission % /
+  Quality / Service / Exclusions & conditions) — that screen already
+  established which dimensions matter for this app's "never price alone"
+  rule (`ibms-brain/meta/context/policy-lifecycle.md`); the PDF is a
+  printable rendering of the SAME data, not a second, independently
+  chosen column set. `Quotation.limits` (a free-form JSON field) is
+  deliberately NOT rendered, for the same reason the web screen already
+  omits it — no established convention anywhere in this app for
+  displaying arbitrary JSON.
+- **Missing/declined insurer callouts** — the same two buckets
+  `ComparisonSection.tsx` already surfaces (shortlisted insurers with no
+  current quote, and insurers that declined) appear in the document too,
+  bilingual, below the comparison table.
+- **Web**: the RFQ detail page's existing "Comparison" section
+  (`apps/web/components/comparison/ComparisonSection.tsx`) gained a
+  "Download comparison (PDF)" button, visible once a matrix has been
+  built, reusing `apiFetchBlob()` from item #7's first slice.
 
 ## Where the code lives
 
@@ -1085,11 +1165,16 @@ F effort:
   logic — every future document type imports this module the same way
   `CustomerServiceModule` does.
 - `apps/api/src/modules/customer-service/complaint-acknowledgement.
-  template.ts` — new. Pure function, `buildComplaintAcknowledgementHtml()`
-  + `escapeHtml()`. `complaint-acknowledgement.template.spec.ts` — 7 new
-  unit tests (AR-only, EN-only, DUAL-both-Arabic-first, category
-  translation + unknown-category fallback, SLA-due-date omission when no
-  timer exists, HTML-injection escaping).
+  template.ts` — new (later refactored, see the quotation-comparison
+  listing below, to import `escapeHtml`/`formatDocumentDate`/
+  `DOCUMENT_BASE_CSS` from the shared `document-html.util.ts` instead of
+  its own private copies). Pure function,
+  `buildComplaintAcknowledgementHtml()`.
+  `complaint-acknowledgement.template.spec.ts` — 7 new unit tests
+  (AR-only, EN-only, DUAL-both-Arabic-first, category translation +
+  unknown-category fallback, SLA-due-date omission when no timer exists,
+  HTML-injection escaping); re-run unchanged (still 7/7) after the later
+  refactor.
 - `apps/api/src/modules/customer-service/complaint-acknowledgement.
   service.ts` — new. `ComplaintAcknowledgementService.generate()` —
   loads the `Complaint` (existing `ComplaintRepository`), its `Customer`
@@ -1097,8 +1182,10 @@ F effort:
   `DocumentTemplate` row (or the built-in fallback), builds the HTML,
   renders it via `PdfRendererService`.
 - `apps/api/src/modules/customer-service/dto/
-  generate-complaint-acknowledgement-query.dto.ts` — new.
-  `language?: 'AR'|'EN'|'DUAL'`.
+  generate-complaint-acknowledgement-query.dto.ts` — new, then DELETED
+  once the quotation-comparison slice promoted an identical shared
+  `DocumentLanguageQueryDto` (see below) — `complaint.controller.ts`
+  imports the shared one now.
 - `apps/api/src/modules/customer-service/complaint.controller.ts` — new
   `GET :id/acknowledgement` route, `complaint.log` permission, returns a
   `StreamableFile`. `customer-service.module.ts` — imports `CustomerModule`
@@ -1125,6 +1212,65 @@ F effort:
   event with the expected filename) against a mocked api response — this
   item's own "web proves wiring, api proves behavior" split, the same one
   item #6 used.
+
+**Item #7's quotation-comparison slice** — no schema migration, no new
+permission, no new production dependency (reuses `playwright-core` from
+the first slice):
+
+- `apps/api/src/modules/document-generation/document-html.util.ts` — new.
+  `escapeHtml`, `formatDocumentDate`, `formatDocumentMoney`,
+  `DOCUMENT_BASE_CSS`, `DocumentLanguage` — promoted out of
+  `complaint-acknowledgement.template.ts` (see above). `document-html.
+  util.spec.ts` — 7 new unit tests.
+  `apps/api/src/modules/document-generation/dto/
+  document-language-query.dto.ts` — new, shared `language?: 'AR'|'EN'|
+  'DUAL'`, superseding the complaint-specific DTO.
+- `apps/api/src/modules/comparison/comparison.service.ts` — `loadVisibleRfq()`
+  (private) extended to also return `customerId` (zero behavior change
+  for `build()`/`get()`/`getById()`, its existing callers); new
+  `getByIdWithCustomer()` — the SAME visibility rule as `getById()` plus
+  the resolved `Customer` row, the one and only authorization gate for
+  the new document endpoint.
+- `apps/api/src/modules/comparison/quotation-comparison.template.ts` —
+  new. Pure function, `buildQuotationComparisonHtml()`.
+  `quotation-comparison.template.spec.ts` — 10 new unit tests (AR-only,
+  EN-only, DUAL-both-Arabic-first, JOD money formatting, superseded-quote
+  tagging, null-field em-dashes, missing/declined insurer lists +
+  their omission when empty, HTML-injection escaping on both exclusions/
+  conditions AND an insurer name).
+- `apps/api/src/modules/comparison/quotation-comparison-document.
+  service.ts` — new. `QuotationComparisonDocumentService.generate()` —
+  calls `ComparisonService.getByIdWithCustomer()` (never
+  `ComparisonRepository` directly), the `DocumentTemplate` row (or the
+  built-in fallback), builds the HTML, renders it via
+  `PdfRendererService`.
+- `apps/api/src/modules/comparison/comparison.controller.ts` — new
+  `GET :id/document` route, `comparison.read` permission, returns a
+  `StreamableFile`. `comparison.module.ts` — imports
+  `DocumentGenerationModule`, registers
+  `QuotationComparisonDocumentService`.
+- `packages/db/prisma/seed-data/document-templates.ts` — new
+  `quotation_comparison` row (6th template overall, second of the 6 real
+  item #7 types) — seeded to both `db` and `db-test`.
+- `apps/api/test/comparison.e2e-spec.ts` — new file (Process 14 had none
+  before this item). 1 test (multiple assertions): permission-gated
+  (403), 404 on an unknown comparison, 404 for a Sales Officer who does
+  NOT own the customer despite holding `comparison.read` (the visibility
+  proof), 200 for a cross-owner Manager regardless of ownership,
+  AR/EN-customer defaults, an explicit override, DUAL producing a
+  genuinely LARGER PDF, and 400 on an invalid `language` value — every
+  PDF check verifies the real `%PDF-` magic bytes.
+- `apps/web/lib/comparison/comparison-api.ts` — new
+  `downloadComparisonDocument()`.
+  `apps/web/components/comparison/ComparisonSection.tsx` — new "Download
+  comparison (PDF)" button, same object-URL + synthetic `<a download>`
+  pattern `complaints/page.tsx` already established.
+- `apps/web/e2e/rfq.spec.ts` — 1 new Playwright test, proving the WIRING
+  against a mocked api — registers a MORE SPECIFIC route
+  (`comparison-matrices/*/document**`) after the file's existing shared
+  `mockRfqApi()` helper's own broader route, relying on Playwright's
+  last-registered-wins route precedence rather than modifying that large
+  shared helper.
 
 ## A real regression caught while verifying item #1
 
@@ -1426,6 +1572,54 @@ different claims — a passing `docker build` proves the image compiles,
 not that a headless browser can actually launch as the unprivileged user
 CMD runs as.
 
+## Verification — item #7's quotation-comparison slice
+
+Touches `apps/api` and `apps/web` only — no migration, no CI/Dockerfile
+change (reuses the first slice's `playwright-core` dependency and its CI/
+Docker fixes unchanged), confirmed via `git diff --stat`. +18 new api
+unit tests (8 in `document-html.util.spec.ts` — 7 plus 1 added during
+review for HTML-escaping the money formatter's non-finite branch; 10 in
+`quotation-comparison.template.spec.ts`) → api unit **2361/2361** (from
+2343). +1 new api e2e test (`comparison.e2e-spec.ts`, the FIRST e2e
+coverage Process 14 has ever had — multiple assertions: permission/404/
+400 gating, a genuine visibility-scoping proof — a non-owning Sales
+Officer holding `comparison.read` still gets 404, a cross-owner Manager
+gets 200 regardless of ownership — AR/EN customer defaults, an explicit
+override, and DUAL producing a genuinely larger PDF, every case verified
+via real `%PDF-` magic bytes) → full 63-file api e2e suite **313/313**
+(from 312) — 307 passed on the first full-suite run; the other 6, spread
+across `rbac.e2e-spec.ts` (×3, the already-chronic flake),
+`audit.e2e-spec.ts` (×1), `dsr.e2e-spec.ts` (×1, a genuine assertion
+failure — 400 instead of 201 — not a bare timeout, but in a PDPL/Legal
+Hold test file with zero relation to this item's own changes), and
+`up-sell.e2e-spec.ts` (×1), all re-confirmed clean in isolation
+(19/19, `--testTimeout=180000`) under this session's own sustained,
+severe resource pressure (RBAC's own 3 tests took 135s/114s/118s in
+isolation — genuinely slow, not hanging, on a machine that had already
+run this same 63-file suite 6+ times in one day). +1 new Playwright test
+(`rfq.spec.ts`) → full web suite **299/299** (from 298, 233 non-`@a11y` +
+66 `@a11y`). `npm run typecheck`/`lint`/`build`/`test` (api + web) OK.
+
+**A second `@code-reviewer` pass — this time on the visibility-preserving
+read path specifically — found 0 BLOCKERs, 3 MINORs, all 3 fixed:**
+`formatDocumentMoney()`'s non-finite branch was interpolating its `raw`/
+`currency` arguments without escaping them (not currently exploitable —
+every real caller's amount is `MONEY_STRING`-regex-validated before ever
+becoming a `Prisma.Decimal` — but this is now shared infrastructure, so
+fixed anyway, with a new regression test); a doc comment claiming "no
+document type needs money formatting server-side" went stale in the SAME
+commit that added `formatDocumentMoney` (removed); and
+`getByIdWithCustomer()` was fetching the same `Customer` row twice (once
+inside the existing `assertCustomerVisible` visibility check, once again
+immediately after) — fixed by having `assertCustomerVisible`/
+`loadVisibleRfq` return the already-fetched row instead of a second,
+redundant query. The review's own primary focus — whether the new
+`getByIdWithCustomer()` could be used to bypass `ComparisonMatrix`'s
+existing per-customer visibility rule — traced every code path from the
+controller down to the database read and found no bypass, corroborated
+by `comparison.e2e-spec.ts`'s own real, non-owning-Sales-Officer-gets-404
+proof against a live app, not just a code-reading claim.
+
 ## Next
 
 **Item #4 is now CLOSED**, with one narrow, documented exception:
@@ -1441,22 +1635,33 @@ that finding first. Same-script typo tolerance and `Insurer` search remain
 open, documented future work. Item #5 remains PARTIALLY complete —
 number/date formatting only; Hijri calendar and multi-currency
 (reinsurance) remain open, documented future work (see "What item #5 does
-NOT cover" above). **Item #7 is now also PARTIALLY built** — complaint acknowledgement only,
-the first of 6 document types, plus the shared rendering infrastructure
+NOT cover" above). **Item #7 is now also PARTIALLY built, on 2 of 6
+document types** — complaint acknowledgement, then quotation comparison,
+which reused the first's shared rendering infrastructure
 (`PdfRendererService`, `DocumentTemplateRepository`,
-`DocumentGenerationModule`) every future document type reuses. The other
-5 (quotation comparison, recommendation report, policy schedule summary,
-invoice, certificate) remain open, documented future work — each has real
-underlying data to build from (see "What item #7 does NOT cover" above),
-but none has its own HTML template, seed row, endpoint, or web entry
-point yet. Persistence (a real `Document` audit trail for a generated
-file) remains explicitly out of scope — this app has no object storage
-anywhere, a separate, larger gap than this item's own ask. Do not assume
-a future session can mark item #5, #6, or #7 fully closed without
-addressing its own deferred scope. Wait for the user's explicit go-ahead
-before resuming any of item #5/#6/#7's remaining scope, or starting any
-other Part F item — do not self-select. Item #8 (the 4-state screenshot
-discipline) is a verification overlay on whichever of #5-7 land, not a
+`DocumentGenerationModule`) unchanged and additionally promoted
+`escapeHtml`/date+money formatting/base CSS into a genuinely shared
+`document-html.util.ts` (a `@code-reviewer` MINOR finding on the first
+slice, acted on proactively rather than after a third document type
+forked its own copy). The other 4 (recommendation report, policy
+schedule summary, invoice, certificate) remain open, documented future
+work — each has real underlying data to build from (see "What item #7
+does NOT cover" above), but none has its own HTML template, seed row,
+endpoint, or web entry point yet. A real lesson from the comparison
+slice worth re-reading before building any of the remaining 4: **check
+whether the underlying entity already enforces per-customer visibility
+beyond a flat permission** (`Complaint` does not; `ComparisonMatrix`
+does) — the document endpoint must inherit that check via the entity's
+own service, never by querying its repository directly, or a real
+access-control regression follows. Persistence (a real `Document` audit
+trail for a generated file) remains explicitly out of scope — this app
+has no object storage anywhere, a separate, larger gap than this item's
+own ask. Do not assume a future session can mark item #5, #6, or #7
+fully closed without addressing its own deferred scope. Wait for the
+user's explicit go-ahead before resuming any of item #5/#6/#7's
+remaining scope, or starting any other Part F item — do not self-select.
+Item #8 (the 4-state screenshot discipline) is a verification overlay on
+whichever of #5-7 land, not a
 standalone build.
 
 Item #7's `apps/api/Dockerfile` fix (Alpine → `node:20.19.0-slim` for the
