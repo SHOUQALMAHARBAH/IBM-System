@@ -77,7 +77,10 @@ If `ibms-app` renames a script, update this contract instead of inventing an ali
 | Accessibility | `npm run test:a11y` (web workspace) — axe-core, split from `npm run e2e` by Playwright `@a11y` grep tag | 0 serious/critical violations |
 | Security tests | `npm run test:security` (repo root — `npm audit --audit-level=high`) | exit 0 |
 | Database migrations | `npm run db:migrate:deploy` (CI/prod) / `npm run db:migrate:dev` (local) | exit 0 |
-| Database schema | `npm run db:validate` — `prisma validate` | exit 0 — schema is internally valid; not a drift check, that's the migrations row above |
+| Database schema | `npm run db:validate` — `prisma validate` | exit 0 — schema is internally valid. NOT a drift check, and neither is `migrate status`: see the two rows below |
+| Migration checksums | `npm run db:checksums` (`db:test:checksums` for the test DB) | exit 0 — every APPLIED migration's stored sha256 matches its file, whole set. `prisma migrate status` does not check this: measured with a drifted migration present, it printed "Database schema is up to date!" and exited 0 |
+| Schema divergence | `npm run db:divergence` (`db:test:divergence`) | exit 0 — `schema.prisma` still describes what the database enforces. Asserts the `migrate diff` output is exactly a NAMED set (things Prisma's language cannot express: generated columns, GIN-on-`Unsupported`, composite FKs) and fails in BOTH directions |
+| Playwright browsers | `npm run browsers:check` | exit 0 — every browser revision on disk is one the installed `playwright-core` can resolve. A version bump leaves the old revision unreachable on disk and nothing else notices |
 | Smoke tests | `bash scripts/smoke.sh api` (repo root; also `npm run test:smoke`) | exit 0 + output |
 
 These rows must be updated in the same commit that creates the relevant engineering capability.
@@ -85,6 +88,49 @@ These rows must be updated in the same commit that creates the relevant engineer
 A consolidated local/agent runner exists for this whole table: `ibms-app/scripts/verify.sh`
 runs every gate above against `db-test` and prints each one's real evidence, ending in a
 summary block suitable for pasting into a PR description.
+
+## WHERE each gate runs: targeted locally, FULL in CI, and CI is what gates the branch
+
+**Adopted 2026-09-21, from measurement.** Run the gates locally SCOPED to what the change
+touches. The authoritative full run is CI's, and a branch is not verified until CI has been
+green on it.
+
+| | full api e2e suite (91 spec files) |
+|---|---|
+| CI (`ci.yml`, `npx turbo run test:e2e --filter=api...`, no file filter) | **14.1 min**, measured |
+| the current dev laptop, quiet and freshly cleaned | **75 min**, measured across seven batches |
+| the same laptop under ordinary desktop load | 5+ hours, and it did not complete |
+
+The repo is public, so GitHub-hosted runners cost nothing. CI is therefore faster than a
+HEALTHY local run and free, which is not a close comparison.
+
+**The reason is not speed, though — it is that CI's resources cannot vary.** A red local run
+carries an ambiguity CI structurally does not have: the code, or the machine? That ambiguity is
+expensive to resolve and it was resolved wrongly at least once — a full-disk explanation fit the
+evidence, was tidy, and was false (`ibms-app/IMPROVEMENTS.md` § 1.32). On a fixed-resource
+runner the question does not arise.
+
+**What "targeted" means:** the spec files covering the change's blast radius, plus the whole-set
+inventory tests, plus every gate that is cheap (typecheck, lint, unit, the three database gates).
+When a response SHAPE or a shared fixture changes, the local run is the full suite anyway —
+targeted means scoped by blast radius, never scoped by convenience.
+
+**Two traps this rule walked into on the day it was written, so nobody repeats them:**
+
+1. **A rule naming CI is vacuous until CI has actually seen the branch.** This rule already
+   said CI gates the branch while a 24-commit feature sat unpushed on one laptop, so CI had
+   never run on any of it. The laptop was being used INSTEAD of CI, not in addition to it.
+2. **`ci.yml` triggers on `push: branches: [main]` and on `pull_request` — not on a feature
+   branch push.** Pushing a branch runs nothing. **Open the PR**; that is the event that makes
+   this rule real. (Which is also what `AGENTS.md` § Session completion has always said:
+   open a PR with evidence and let a human merge.)
+
+**Scope of this rule:** `ibms-app`, whose CI genuinely runs the whole suite in one unfiltered
+command. Checked on adoption: it is the only repo vendoring this brain — no other repository on
+the account has a `.gitmodules` at all — so nothing else can inherit a weaker gate from it. **A
+future repo that syncs this brain must not adopt this row until its own CI is confirmed to run
+the FULL suite**, because "full in CI" is a weaker gate than a local full run if CI only runs a
+subset.
 
 ---
 
