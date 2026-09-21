@@ -89,6 +89,29 @@ A consolidated local/agent runner exists for this whole table: `ibms-app/scripts
 runs every gate above against `db-test` and prints each one's real evidence, ending in a
 summary block suitable for pasting into a PR description.
 
+## STEP ZERO OF STARTING A BRANCH: open the draft PR on the first commit
+
+**Before the second commit, not after the last one.** Create the branch, make one commit, push,
+and open the PR as a **draft**. Then every push is checked on fixed resources within about fifteen
+minutes, and a red arrives while the commit that caused it is the last thing you touched.
+
+This is a HABIT rather than a rule you consult, because the two failures it prevents are both
+invisible from inside the work:
+
+1. **A branch that has never been pushed exists in exactly one place.** A 24-commit feature —
+   the whole of insurer management, including every measurement behind it — sat on a single
+   laptop with no copy anywhere. Nobody had decided to carry that risk; nobody had looked.
+2. **Pushing is not enough on its own.** `ibms-app`'s `ci.yml` triggers on
+   `push: branches: [main]` and on `pull_request`. A feature-branch push runs **nothing**. So
+   "push your work" would not have fixed (1) either — the PR is the event that makes CI real.
+
+And the cost of skipping it compounds silently: those 24 commits reached CI in a single batch. A
+red would have meant bisecting a month of work instead of reading one diff.
+
+A draft PR costs nothing on a public repo, is not a request for review, and converts to ready
+when the work is. `AGENTS.md` § Session completion has always ended at "open a PR with evidence
+and let a human merge" — this moves that step to the beginning, where it does the work.
+
 ## WHERE each gate runs: targeted locally, FULL in CI, and CI is what gates the branch
 
 **Adopted 2026-09-21, from measurement.** Run the gates locally SCOPED to what the change
@@ -103,6 +126,23 @@ green on it.
 
 The repo is public, so GitHub-hosted runners cost nothing. CI is therefore faster than a
 HEALTHY local run and free, which is not a close comparison.
+
+**But do not keep this rule for the speed, because speed is the argument someone trades away on
+a busy day.** Keep it for two properties a developer machine cannot offer at all:
+
+**CI is the only environment that starts from NOTHING, every time.** It migrates and seeds an
+empty database on every run. A long-lived dev database already holds rows that earlier migrations
+created, so it exercises the update path and never the create path — which is exactly how a
+broken seed passed locally and failed in CI during RBAC Phase 1, and how `packages/db`'s seed
+turned out to be typechecked by nothing at all. The same structure made CI the only place the
+migration-checksum and schema-divergence gates could be independently confirmed: until they ran
+there, both were claims about two databases carrying whatever history they happened to carry.
+**A clean build is not something you can arrange locally without destroying your own data.**
+
+**CI's resources cannot vary.** A red local run carries an ambiguity CI structurally does not
+have: the code, or the machine? That ambiguity is expensive to resolve and it was resolved
+WRONGLY at least once — a full-disk explanation fit the evidence, was tidy, and was false
+(`ibms-app/IMPROVEMENTS.md` § 1.32). On a fixed runner the question does not arise.
 
 **The reason is not speed, though — it is that CI's resources cannot vary.** A red local run
 carries an ambiguity CI structurally does not have: the code, or the machine? That ambiguity is
