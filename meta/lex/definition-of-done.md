@@ -6,6 +6,53 @@
 
 A PR may not be pushed until every gate in `meta/context/verification-contract.md` applicable to the changed paths has been run, and its output pasted into the PR description. The agent's assurance that something works is not evidence.
 
+## Doc currency is part of done, not a hook that fires later
+
+**A PR is not done while `CLAUDE.md` or `README.md` states something the PR has made false.**
+
+This is a gate, not a courtesy. Those two files are the first thing a newcomer reads and the
+first thing an agent loads, so a false claim there is the most expensive kind of stale
+documentation — it is believed, and it is believed before anyone looks at the code.
+
+Measured, 2026-09-22: across a 30-commit branch, both files still said "Insurer CRUD remains
+specification-only and is deliberately deferred" after insurer CRUD had shipped. Nobody noticed;
+`.claude/hooks/enforce-workspace-updates.sh` caught it on the last commit of the branch. **The
+hook working is not the same as the rule working** — a hook that fires at the end lets thirty
+commits accumulate a false claim, and it fires on the person who happens to stage the last
+developer-facing file rather than on the one who made the statement false.
+
+So the check belongs in the same pass as the gates:
+
+1. **Does this change make any sentence in `CLAUDE.md` or `README.md` false?** Grep the
+   feature's own nouns — a claim goes stale on the words it names, not on the files it touches.
+   Statements of the form "X is not built", "X remains specification-only", "X is deferred" are
+   the ones that rot, because they are true when written and nobody revisits them.
+2. **Correct rather than delete.** A deferral usually had a REASON, and the reason often
+   survives the deferral — the insurer codes above were deferred to protect a strict-subset
+   property that is still protected, now by an explicit list instead. Deleting the sentence
+   would have lost that.
+3. **A dated `## What's New` row** per `meta/lex/workspace-updates.md`, in the same commit as
+   the change it describes — not batched at the end of a branch, where it becomes one row
+   summarising work nobody can now separate.
+
+## Rewriting published history: the tree is the test
+
+`git push --force` is acceptable **only when the TREE IS UNCHANGED** — a commit-message fix, a
+rebase that alters no content. Verify it rather than assume it:
+
+```bash
+git diff --stat HEAD origin/<branch>    # must print nothing
+git push --force-with-lease             # never bare --force
+```
+
+**If the tree changes, add a commit instead.** The reason is not etiquette: **CI validated a
+tree.** Rewriting that tree means the green you are standing on no longer describes what is
+there, and the PR's checks now refer to content that no longer exists. A new commit gets its own
+run and its own green.
+
+That single test — *did the tree change?* — settles every case without judgement. Disclose the
+force-push either way; it is not an action to perform quietly on a branch anyone else can pull.
+
 ## What triggers this rule
 
 The platform's module structure was decided 2026-08-25 — `ibms-app` (see
