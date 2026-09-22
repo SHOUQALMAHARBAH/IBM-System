@@ -112,6 +112,59 @@ A draft PR costs nothing on a public repo, is not a request for review, and conv
 when the work is. `AGENTS.md` § Session completion has always ended at "open a PR with evidence
 and let a human merge" — this moves that step to the beginning, where it does the work.
 
+## STEP ZERO, SECOND HALF: reset the local test database when you start a branch
+
+**Beside the draft PR, and for the same reason: minutes on a schedule instead of a day of
+diagnosis mid-work.** Before the first commit, reset and reseed the local e2e database.
+
+The local e2e database is never truncated between runs, so every spec's fixture rows outlive it
+and every later run pays for them. Anything doing per-row work degrades toward O(n), and the
+degradation does not announce itself — it arrives as a test that was green last week going red
+with no code change, in a file unrelated to what you are doing.
+
+**Twice now this has been discovered as an emergency in the middle of a feature, each time at a
+higher limit:**
+
+| | accumulated | reset |
+|---|---|---|
+| 2026-09-09, 36,470 users | full suite 311/323, **12 failed**, 44 min; the heaviest file 557 s | 322/323, 15 min; that file **10.4 s** |
+| 2026-09-22, 45,939 ACTIVE users (5.9M audit rows) | that file **4/10 failed** — and no longer as a test timeout | (see below) |
+
+The 2026-09-22 crossing is the one that makes this a standing step rather than a note, because it
+broke a different thing. The failure was a **500 from the application**: one interactive
+transaction writing a row per active subject passed Prisma's 120 s cap —
+
+    Transaction API error: Transaction already closed ... The timeout for this transaction was
+    120000 ms, however 128300 ms passed since the start of the transaction.
+
+— so raising the test timeout, which is what the 2026-09-09 crossing settled for, **cannot reach
+it**. A mitigation chosen for the first crossing was exhausted by the second.
+
+Three things follow, and they are worth keeping separate:
+
+1. **It is not a product defect.** No real office has 45,939 active users. The transaction is
+   O(active subjects) by design and that design is correct at real scale.
+2. **CI is unaffected**, because CI starts from nothing. Same commit, same spec file, same
+   Postgres, same serialization setting: **10/10 in 14.7 s on CI, 4/10 failed with single tests
+   at 143–261 s locally.** Read from the CI log, not inferred from the run being green.
+3. **A reset is therefore maintenance, not a fix** — and that is the point. It takes minutes and
+   buys months, which is a better trade than the per-file-database isolation the accumulated-DB
+   entry has been proposing since it was written. Do this on schedule and that rewrite may never
+   need doing.
+
+Two cautions, both learned the same day:
+
+- **The command refuses to run unattended, by design.** `prisma migrate reset` asks for
+  confirmation, and Prisma additionally blocks it when it detects an AI agent, requiring the
+  user's explicit consent for that specific run. That is correct for an irreversible action on a
+  database, and it must not be worked around with a manual `DROP DATABASE` — the guard is the
+  control, not an obstacle.
+- **Take any measurement that depends on the current contents FIRST.** A reset makes some
+  questions unaskable and, worse, makes some of them answer *zero for the wrong reason*: a gate
+  reading "no unmapped rows" on a freshly reset database is measuring an empty table, not a
+  completed migration. Asking "does anything outstanding rest on this data?" before the reset is
+  what caught `ibms-app/IMPROVEMENTS.md` § 1.40.
+
 ## WHERE each gate runs: targeted locally, FULL in CI, and CI is what gates the branch
 
 **Adopted 2026-09-21, from measurement.** Run the gates locally SCOPED to what the change
@@ -144,11 +197,16 @@ have: the code, or the machine? That ambiguity is expensive to resolve and it wa
 WRONGLY at least once — a full-disk explanation fit the evidence, was tidy, and was false
 (`ibms-app/IMPROVEMENTS.md` § 1.32). On a fixed runner the question does not arise.
 
-**The reason is not speed, though — it is that CI's resources cannot vary.** A red local run
-carries an ambiguity CI structurally does not have: the code, or the machine? That ambiguity is
-expensive to resolve and it was resolved wrongly at least once — a full-disk explanation fit the
-evidence, was tidy, and was false (`ibms-app/IMPROVEMENTS.md` § 1.32). On a fixed-resource
-runner the question does not arise.
+**So when a local run and CI DISAGREE, CI is the authority.** Not as a tie-break of convenience
+— because only one of them has a stated, fixed configuration. The local database carries
+whatever history it has accumulated, the local machine whatever else is running on it; neither is
+recorded anywhere, so a local red is a result nobody can reproduce, including the person who got
+it. Measured instance: the same commit ran a spec file **10/10 in 14.7 s on CI and 4/10 failed
+locally**, the single variable being accumulated fixture rows.
+
+This does not license ignoring a local red. It sets the order: reproduce it in CI, and if CI is
+green, the next question is what differs about the machine — not what is wrong with the code.
+Say which environment a number came from every time you quote one.
 
 **What "targeted" means:** the spec files covering the change's blast radius, plus the whole-set
 inventory tests, plus every gate that is cheap (typecheck, lint, unit, the three database gates).
