@@ -159,6 +159,32 @@ Two cautions, both learned the same day:
   user's explicit consent for that specific run. That is correct for an irreversible action on a
   database, and it must not be worked around with a manual `DROP DATABASE` — the guard is the
   control, not an obstacle.
+- **`--force` DOES NOT RUN THE SEED, and what it leaves behind fails every api e2e.** Measured
+  2026-10-02: `prisma migrate reset --force` applied all 118 migrations and then stopped. The
+  database was left with **2 roles and ZERO permission grants** — the two roles being an `ensureRole`
+  upsert from the first spec that ran, not seeded data.
+
+  **Every api e2e then 403s**, because `PermissionsGuard` finds no grants for any role. Whoever
+  resets next sees the whole suite red and concludes their own work broke it, which is the case this
+  note exists for: a reset that HALF-WORKS is worse than one that fails, because the failure is
+  somewhere else entirely.
+
+  So **check the numbers after a reset, not that the command exited 0**:
+
+      npx dotenv -e .env.test -- npx prisma migrate status   # 118 migrations, up to date
+      -- then, against db-test:
+      SELECT count(*) FROM "Permission";       -- expect 219
+      SELECT count(*) FROM "RolePermission";   -- expect 502
+
+  If the grant count is 0, run the seed explicitly — `cd packages/db && DATABASE_URL=<db-test>
+  npx tsx prisma/seed.ts` — and re-check. The permission count without the grant count is not
+  enough: permissions can seed while grants do not.
+
+  **AND THE DIAGNOSTIC THAT FOUND IT, because it generalises: a test moving from 404 to 403 is a
+  PERMISSIONS signal, not a wrong-path signal.** A 404 says the route was not matched; a 403 says it
+  was matched and the actor was refused. Reaching 403 is therefore *progress*, and the next question
+  is about grants rather than about paths or role names — which is why the grant count got checked
+  instead of the role spellings being doubted.
 - **Take any measurement that depends on the current contents FIRST.** A reset makes some
   questions unaskable and, worse, makes some of them answer *zero for the wrong reason*: a gate
   reading "no unmapped rows" on a freshly reset database is measuring an empty table, not a
