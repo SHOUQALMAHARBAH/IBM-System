@@ -100,6 +100,7 @@ No repo/service split exists yet. The two module groups this brain currently gov
 | [`meta/lex/workspace-updates.md`](meta/lex/workspace-updates.md) | Keeping this repo's own docs current |
 | [`meta/lex/brain-freshness.md`](meta/lex/brain-freshness.md) | Session-start sync |
 | [`meta/lex/code-review.md`](meta/lex/code-review.md) | Review format, finding codes, severity |
+| [`meta/lex/definition-of-done.md`](meta/lex/definition-of-done.md) | No push without evidence from the verification contract — **added 2026-11-06: this table listed 11 of the 12 lex rules and this was the missing one**, while `CLAUDE.md` § Mandatory rules listed all 12. `scripts/brain-doctor.sh` does not compare the two catalogues, so nothing caught it. |
 
 ---
 

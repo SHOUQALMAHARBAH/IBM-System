@@ -16,7 +16,23 @@ Opportunity.status:
 
 Policy.status (post-placement):
   Placement Confirmed → Issued (received from insurer) → Checking In Progress →
-  Discrepancy | Verified → Delivered → Active
+    Verified → Delivered → Active
+    Discrepancy ──(correction requested; resolve, then re-check)──┐
+      └──────────────────→ Checking In Progress ─────────────────┘
+
+  A Cover Note / Binder may precede issuance — interim cover with a tracked
+  expiry, which must resolve to a Policy. It is a real state (see § The rules
+  that aren't obvious) and was missing from this diagram entirely.
+
+  CORRECTED 2026-11-06 (ibms-app module 0-c batch 5). This drew
+  "Discrepancy | Verified → Delivered", which contradicted this file's own
+  prose: § The rules that aren't obvious says a discrepancy "puts the policy in
+  `Discrepancy — Correction Requested` and BLOCKS Delivery until resolved", and
+  `DISCREPANCY` IS the delivery block. So the old diagram drew the one edge the
+  control exists to forbid, and omitted the resolution path
+  (`Discrepancy → Checking In Progress → Verified`) that actually exists —
+  `(ISSUED | DISCREPANCY) → CHECKING_IN_PROGRESS → (VERIFIED | DISCREPANCY)` in
+  `PolicyCheckingService`.
 
 Endorsement/Cancellation.status:
   Requested → Submitted to Insurer → Insurer Confirmed →
@@ -63,7 +79,20 @@ Client decision branches at two points and each routes differently: **Accept as 
 
 ## Where the code lives
 
-Nothing yet — no engineering repo exists.
+**CORRECTED 2026-11-06 (ibms-app module 0-c batch 5). This said "Nothing yet — no engineering repo
+exists."** The engineering repo is **`ibms-app`**, which vendors this brain as a submodule, and the
+policy lifecycle is built:
+
+- `apps/api/src/modules/policy/` — placement, issuance, checking, delivery;
+  `apps/api/src/modules/endorsement/` — the endorsement and cancellation path.
+- `apps/api/src/repositories/policy.repository.ts`.
+- `packages/db/prisma/schema.prisma` — `Policy`, `PolicySchedule`, `PolicyChecking`, `Endorsement`,
+  and the `WORKFLOW_TRANSITIONS.Policy` map.
+- Screens: `apps/web/app/(app)/policies/` (list and `[id]`), with `PolicySection` on
+  `/opportunities/[id]`.
+
+Processes 18–22 all shipped. **Note the one thing this file's own prose gets right and its state
+diagram does not** — see the `Discrepancy` correction in § The shapes.
 
 ## Out of scope for this file
 

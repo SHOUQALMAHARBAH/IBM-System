@@ -67,7 +67,25 @@ External Auditor              Read-only access to logs, documents    Modify any 
 
 ## Where the code lives
 
-Nothing yet — no engineering repo exists. RBAC permission grid for the PCMS-side modules (M01–M12): `PRIV-SRS-01` §9.
+**CORRECTED 2026-11-06 (ibms-app module 0-c batch 5). This said "Nothing yet — no engineering repo
+exists."** It is built, and the architecture has moved on from this file's own premise — read
+**`ibms-app/docs/office-scoped-rbac.md`** before anything role-related:
+
+- `apps/api/src/modules/rbac/` — permissions, role administration, duty segregation.
+- `packages/db/prisma/seed-data/permissions.ts` — the global permission catalogue.
+- `apps/api/src/common/maker-checker-pairs.config.ts` — the maker/checker registry: **16 pairs
+  across 15 tables**, each carrying `checkerPermission`, `makerPermission` and the database CHECK
+  constraint that enforces it. `npm run check:maker-checker-pairs` derives the count in both
+  directions and is a CI gate.
+- Screens: `apps/web/app/(app)/settings/roles/`, `.../users/`, `.../duty-segregation/`.
+
+**The fixed 11-role catalogue below is no longer the architecture.** Roles are now office-scoped:
+`Role` carries `organizationId`, a role name is unique per office rather than globally, and
+authorization resolves permissions from `roleId` — **never from a role name**, because two offices
+may each define a "Manager" with different grants. The legacy 11 survive as ordinary per-office rows
+carrying their old machine names, so the shapes below still describe what a default office gets.
+
+RBAC permission grid for the PCMS-side modules (M01–M12): `PRIV-SRS-01` §9.
 
 ## Out of scope for this file
 

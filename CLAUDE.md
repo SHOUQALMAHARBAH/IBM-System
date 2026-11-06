@@ -55,18 +55,31 @@ meta/templates/   PR, ticket, and doc templates.
 
 ## Modules (business view — not yet mapped to repos)
 
-`ibms-app` exists as a single web+api monorepo — it is not yet split by module or service boundary. What exists is the module inventory from `PRIV-SRS-01` and the 74-process/8-domain inventory in the context document. Treat this as the module list, not a services table, until a service-boundary decision fills it in:
+`ibms-app` is a single web+api monorepo, **organised by module inside one service**: `apps/api/src/modules/` holds **45 modules** (measured 2026-11-06, `ls -d apps/api/src/modules/*/ | wc -l`) — `claim`, `policy`, `endorsement`, `pdpl`, `compliance-risk`, `management-reporting`, `supporting-operations` and the rest. **Corrected 2026-11-06: this said "it is not yet split by module or service boundary", which was false in the first half** — a reader was told to expect an undifferentiated codebase and would not have gone looking for `modules/`.
+
+It is **not** split by SERVICE boundary, and that part stands: one deployable api, one deployable web. The table below is still a business view rather than a services table, and no service-boundary decision has been taken.
 
 | Module | Governs |
 |---|---|
-| Core IBMS (Sales/CRM, Policy, Claims, Finance) | The 74 business processes — see `meta/context/policy-lifecycle.md` and `meta/context/claims-lifecycle.md` |
+| Core IBMS (Sales/CRM, Policy, Claims, Finance, Compliance) | The 74 business processes — see `meta/context/policy-lifecycle.md` and `meta/context/claims-lifecycle.md`. **`Compliance` added 2026-11-06: this row omitted it while `README.md` § Modules included it.** README was right — Domain F (Compliance & Risk, #47–57) is one of the eight domains and is built. |
 | M01–M12 (PCMS) | Privacy/compliance modules — see `meta/context/pcms-privacy-modules.md` |
 
 ## Architecture relationships
 
 **IBMS and the PCMS (Privacy Compliance Management System) are one system, not two.** PCMS is the source of truth for every privacy/consent/retention/breach/DSR rule; IBMS's compliance module consumes PCMS decisions and feeds it data (customers, policies, claims) — it must never re-derive or duplicate a privacy rule. See `meta/designs/2026-08-pcms-source-of-truth.md`.
 
-`ibms-app` is a Next.js (web) + NestJS (api) + PostgreSQL/Prisma monorepo. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md` for why, including the Prisma 6-vs-7 and repo-split calls. No call-direction / auth-boundary / system-of-record decision beyond "web calls api" has been made yet. **Do not invent one.** Record it here the day it's decided.
+`ibms-app` is a Next.js (web) + NestJS (api) + PostgreSQL/Prisma monorepo. See `meta/designs/2026-08-ibms-app-stack-and-repo-split.md` for why, including the Prisma 6-vs-7 and repo-split calls.
+
+**The authentication boundary HAS been decided. Corrected 2026-11-06 (ibms-app module 0-c batch 5): this said "No call-direction / auth-boundary / system-of-record decision beyond 'web calls api' has been made yet. Do not invent one."** That order was right and is kept below for the decisions it still governs — but the auth boundary is not one of them. It was taken in the multi-tenancy specification (Part II §4.1–§4.10) and built; what follows is **transcribed** from `ibms-app/docs/auth-mfa-session.md`, which is the authority and was walked against a running stack:
+
+- **The api is the boundary.** Every employee sign-in goes through it; the web calls it and holds no authority of its own.
+- **Every step runs inside an Organization resolved from the subdomain.** `GET /orgs/resolve?subdomain=…` is public by necessity — it runs before there is anyone to authenticate — and returns only what a sign-in screen needs. **There is no route that lists offices**, because §4.10.4 says one office administrator must not learn that another office exists.
+- **The session row is the system of record, not the token.** Every access token carries an `org` claim (§4.10.2), but `validateAndTouch` resolves the Organization from the session row and `JwtStrategy` rejects a token whose claim disagrees with its own session.
+- **`TenantMatchGuard`** enforces §4.10.3 — the subdomain's office must match the session's. It deliberately does nothing when the host names no office (`localhost`, an IP, the apex, `api.`), and skips an unknown-but-well-formed subdomain rather than refusing, which would turn the guard into a way to probe which labels are registered.
+- **Two session ceilings**: `idleExpiresAt` moves forward on each authenticated request; `absoluteExpiresAt` never moves (12h). Either elapsing **revokes** the session — a termination, not a screen lock.
+- **MFA** is TOTP plus a 30-day `TrustedDevice` for standard roles only; `SYSTEM_SECURITY_ADMINISTRATOR`, `COMPLIANCE_OFFICER` and `DATA_PROTECTION_OFFICER` always step up and may not trust a device.
+
+No **call-direction** or **service-boundary** decision beyond "web calls api" has been made. **Do not invent one.** Record it here the day it is decided.
 
 `ibms-app` vendors this repo as a pinned git submodule (`ibms-app/ibms-brain/`) rather than restating any rule — see `meta/designs/2026-08-ibms-app-brain-submodule-sync.md`. This repo has no reverse dependency on `ibms-app` and does not need one.
 
@@ -118,7 +131,7 @@ Loaded from `meta/lex/`. Enforcement level is stated in each file.
 
 `meta/context/verification-contract.md` defines the gates every change must pass and the evidence each produces. Run them with `bash scripts/verify.sh`. Claims are not evidence — exit codes and screenshots are. **In this repo, the only real gate is `bash scripts/brain-doctor.sh`** — it stays documentation-only. For `ibms-app` changes, real gates now exist: `npm run typecheck|lint|test|build|test:e2e|e2e` — see `meta/context/verification-contract.md` § Backend/frontend gate commands. Do not deploy to production; open a PR with evidence attached and let a human merge.
 
-Path-scoped rules live in `.claude/rules/` and load themselves when you touch matching files — none exist yet because there is no code to scope them to.
+Path-scoped rules live in `.claude/rules/` and load themselves when you touch matching files — none exist in **this** repo, which stays documentation-only. **Corrected 2026-11-06: this said "none exist yet because there is no code to scope them to", which stopped being the reason once `ibms-app` existed.** The code to scope them to is in `ibms-app`; `.claude/rules/` there is the place for them, and `ibms-app/README.md` § `.claude/` records which hooks are and are not wired.
 
 ## Domain glossary
 
@@ -128,7 +141,14 @@ See `meta/context/glossary.md`. Terms that mean something specific here — **ac
 
 ## MR standards
 
-**Not yet decided** — there is no engineering repo. Record branch naming, PR title format, and review rule here the day one is created. Until then, `meta/templates/pr-description.md` is the description format for any interim proposal/ticket writing.
+**CORRECTED 2026-11-06 (ibms-app module 0-c batch 5). This said "Not yet decided — there is no engineering repo."** The engineering repo is `ibms-app` and it has conventions in use:
+
+- **Branch naming** — `<module>/<batch>-<slug>`, e.g. `module-0c/batch-2-measure-first`.
+- **Open the draft PR on commit one.** `ci.yml` triggers on `push: branches: [main]` and `pull_request` only, so **pushing a feature branch runs NOTHING** — the PR is the event that makes the verification contract real. 24 commits once sat on one laptop with no copy anywhere.
+- **No push without evidence** from `meta/context/verification-contract.md`; `meta/lex/definition-of-done.md` is the rule.
+- **A dated `## What's New` row belongs in the commit that earns it**, not batched at the end of a branch. `ibms-app/CLAUDE.md`'s table is capped at 12 rows (`npm run check:whats-new-cap`).
+
+`meta/templates/pr-description.md` is still the description format.
 
 ---
 

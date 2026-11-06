@@ -12,8 +12,17 @@ The path a reported loss takes from notification to closure, and how it feeds re
 Claim.status:
   Notified → Registered → Documentation In Progress →
   Under Assessment (insurer) →
-  Approved | Partially Approved | Declined →
-  Settled → Closed
+    Approved | Partially Approved → Settled → Closed
+    Declined ─────────────────────────────────→ Closed
+
+  CORRECTED 2026-11-06 (ibms-app module 0-c batch 5). This drew
+  "Approved | Partially Approved | Declined → Settled → Closed", which
+  contradicted this file's own prose twice over: a DECLINED claim has no
+  payout, so it cannot settle (a `clientPaymentConfirmedAt` on one is a 422),
+  and it closes DIRECTLY — see § Claim Closure (Process 29) below, which has
+  always said "`SETTLED → CLOSED` gated on the client's payment receipt, or
+  `DECLINED → CLOSED` directly". The old diagram also gave a declined claim
+  no route to Closed at all except through a state it may not enter.
 
 Complaint.status (triggered by a disputed claim decision):
   Logged → Assigned → In Progress → Resolved → Closed | Escalated
@@ -73,7 +82,20 @@ Complaint.status (triggered by a disputed claim decision):
 
 ## Where the code lives
 
-Nothing yet — no engineering repo exists.
+**CORRECTED 2026-11-06 (ibms-app module 0-c batch 5). This said "Nothing yet — no engineering repo
+exists."** The engineering repo is **`ibms-app`**, which vendors this brain as a submodule, and the
+claims lifecycle is built:
+
+- `apps/api/src/modules/claim/` — `claim.service.ts`, `claim.config.ts`, the controller and DTOs.
+- `apps/api/src/repositories/claim.repository.ts`.
+- `packages/db/prisma/schema.prisma` — `Claim`, `ClaimStatusHistory`, `ThirdPartyClaimant`,
+  `Settlement`, `Adjuster`, and the `ClaimStatus` enum.
+- The screen is `apps/web/app/(app)/claims/page.tsx`, with `ClaimSection` on
+  `/opportunities/[id]` for the per-opportunity view.
+
+Processes 23–30 (Notification → Registration → Documentation → Assessment → Follow-up →
+Settlement → Closure → Analytics) all shipped; `ibms-app/docs/scope-and-gaps.md` is the authority
+on what remains at the edges.
 
 ## Out of scope for this file
 
