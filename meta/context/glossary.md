@@ -28,7 +28,28 @@ Only terms that mean something specific here and something different everywhere 
 
 Who exists in the system and what each is allowed to do. Full role catalogue and mandatory segregation rules: `meta/context/roles-and-segregation-of-duties.md`.
 
-| Actor | Can (summary) | Cannot |
+> **THIS TABLE IS AN ABRIDGEMENT AND MUST NOT BE READ AS THE RULE SET. Labelled 2026-11-06 (ibms-app
+> module 0-c batch 5), because the abridgement drops exactly the rules that matter most.**
+>
+> Measured against `roles-and-segregation-of-duties.md`: that file carries **11** roles, this one
+> carries **8**. The three missing are **System/Security Administrator**, **Executive / Management**
+> and **External Auditor (time-boxed)**. And the `Cannot` column here drops **four clauses, every one
+> of them a duty-segregation rule**:
+>
+> | Role | Clause dropped here |
+> |---|---|
+> | Claims Officer | *approve own claim payments* |
+> | Finance / Collections Officer | *alter commission rate tables without approval* |
+> | Compliance Officer | *act as DPO on data-subject requests unless formally dual-hatted* |
+> | Branch/Department Manager | *self-approve their own escalations* |
+>
+> **It is deliberately not expanded to match.** Two maintained copies of a segregation rule set is
+> two answers to "what may one person do", and this repository's own standard is to prefer the form
+> that cannot express the mistake. So the pointer above is the authority and this stays a glossary
+> summary — but a reader who takes the `Cannot` column here as complete gets a materially weaker rule
+> set than the one that governs, which is why the drops are named rather than merely signposted.
+
+| Actor | Can (summary) | Cannot (ABRIDGED — see the box above) |
 |---|---|---|
 | Sales / Relationship Officer | Create Lead/Prospect, capture KYC, initiate RFQ | Approve own KYC file or recommendation above threshold |
 | Placement / Technical Officer | Manage RFQ, quotations, negotiation | Perform Policy Checking on a policy they placed |

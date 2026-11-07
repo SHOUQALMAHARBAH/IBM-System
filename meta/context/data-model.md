@@ -100,7 +100,25 @@ ConsentRecord / DataSubjectRequest
 
 ## Where the code lives
 
-Nothing yet — no engineering repo exists. This section is the placeholder to fill the day schema design starts; do not invent file paths ahead of that.
+**CORRECTED 2026-11-06 (ibms-app module 0-c batch 5). This said "Nothing yet — no engineering repo
+exists. This section is the placeholder to fill the day schema design starts; do not invent file
+paths ahead of that."** That day has long passed. The schema is
+**`ibms-app/packages/db/prisma/schema.prisma`**, exposed as the `@ibms/db` package, and it holds
+**161 models** — of which **138 are tenant-scoped** (they carry `organizationId` and every one has
+an RLS policy; measured against the live catalogue 2026-11-06) and the rest are global reference
+data.
+
+Read before touching it:
+
+- `ibms-app/docs/multi-tenancy-rls.md` — the two isolation layers, and the one thing that silently
+  defeats the second (connecting as the table owner).
+- `ibms-app/CLAUDE.md` § Repo map and the Prisma pin note — **`prisma` stays on 6.x**, and
+  `db:migrate:dev` must never be run on a database you care about: it reads the composite foreign
+  keys, GIN indexes and generated columns as drift and offers a migration that DROPS 15 cross-tenant
+  foreign keys. Use `npm run db:migrate:deploy`.
+
+The instruction not to invent file paths is kept in spirit: the paths above were read off the tree,
+not assumed.
 
 ## Out of scope for this file
 

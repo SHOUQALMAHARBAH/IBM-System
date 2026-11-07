@@ -122,7 +122,14 @@ if [ -f CLAUDE.md ]; then
   LAST=$(git log -1 --format=%ct -- CLAUDE.md 2>/dev/null)
   if [ -n "$LAST" ]; then
     DAYS=$(( ( $(date +%s) - LAST ) / 86400 ))
-    if [ "$DAYS" -gt 21 ]; then warn "CLAUDE.md untouched for $DAYS days — is the brain still being used?"
+    # AN ERROR, NOT A WARNING, SINCE 2026-11-07. This was a `warn`, and the brain's own
+    # staleness was then found by hand TWICE — a document that says "there is no engineering
+    # repository" while one exists, and five lex/context claims that had quietly become false.
+    # A warning in a 200-line report is a line nobody reads; this is the one check whose whole
+    # job is to notice that nobody is reading. It BLOCKS: `verify.sh` exits 1 on any error, so
+    # a brain left for three weeks stops the gate until somebody looks at it, which is the
+    # intended cost rather than a side effect.
+    if [ "$DAYS" -gt 21 ]; then err "CLAUDE.md untouched for $DAYS days — the brain is going stale; re-read it and correct what has become false before continuing"
     else ok "CLAUDE.md updated $DAYS day(s) ago"; fi
   fi
 else
@@ -171,6 +178,55 @@ if [ -d .claude/hooks ]; then
 else
   warn ".claude/hooks/ missing"
 fi
+
+# ── 8b. Hook WIRING — present, registered, executable, and loud when absent ─────
+#
+# § 8 above checks what a hook DOES when it runs. It has never checked whether it runs at
+# all, and that was the larger gap: measured 2026-11-07, every hook here was recorded in git
+# as 100644 (no executable bit on a fresh clone) while every registration ended in `|| true`,
+# so on any machine but this one all six guards would have silently done nothing — and this
+# script reported `ok`. The detail and the plants are in scripts/hook_health.py.
+echo ""
+echo "  Hook wiring"
+if [ -f scripts/hook_health.py ]; then
+  HEALTH=$("$PYTHON" scripts/hook_health.py 2>&1)
+  HEALTH_STATUS=$?
+  while IFS= read -r l; do
+    case "$l" in
+      *ERROR*) err "${l#*ERROR  }" ;;
+      *note*) : ;;
+      *) [ -n "$l" ] && ok "${l#*ok     }" ;;
+    esac
+  done <<< "$HEALTH"
+  [ "$HEALTH_STATUS" -ne 0 ] && [ -z "$HEALTH" ] && err "hook_health.py failed without reporting why"
+else
+  err "scripts/hook_health.py is missing — hook wiring is unchecked"
+fi
+
+# ── 8c. The guards that READ CODE must still discriminate ───────────────────────
+#
+# Each scanner carries a --self-test of planted inputs rather than a count floor, because a
+# count floor refuses a correct tree the moment the work it guards gets done. Running them
+# here is what stops a tokeniser regression from passing as silence: the measured precedent
+# is a regex comment-stripper that truncated real code at every `http://` URL and moved a
+# figure by four in the direction that looked like progress.
+echo ""
+echo "  Guard self-tests"
+SELFTEST_BAD=0
+for mod in code_text status_write_scan money_scan; do
+  if [ -f ".claude/hooks/$mod.py" ]; then
+    if OUT=$(cd .claude/hooks && "$PYTHON" "$mod.py" --self-test 2>&1); then
+      ok "$mod self-test clean"
+    else
+      err "$mod --self-test FAILED: $(echo "$OUT" | grep -m1 FAIL)"
+      SELFTEST_BAD=1
+    fi
+  else
+    err ".claude/hooks/$mod.py is missing — a guard's proof is gone"
+    SELFTEST_BAD=1
+  fi
+done
+[ "$SELFTEST_BAD" = 0 ] || true
 
 # ── 9. AGENTS.md must be imported, not just present ─────────────────────────
 echo ""
