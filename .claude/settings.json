@@ -1,4 +1,5 @@
 {
+  "_comment": "A CONFIGURED GUARD THAT IS MISSING MUST FAIL THE ACTION, NOT PASS IT. Every registration below resolves its script, runs it through `bash` (never `exec \"$script\"`, which needs an executable bit that a fresh clone may not have — all seven files here were recorded in git as 100644 until 2026-11-07), and exits 2 with a named message when the file is absent or unreadable. The previous shape was `[ -x \"$script\" ] && exec \"$script\" || true`, where a missing guard exited 0 — indistinguishable from a clean pass, and the same `|| true`-on-the-deciding-line family that once turned a missing `jq` binary into two CI watches that printed nothing while the build was red. `scripts/hook_health.py` now fails on both shapes, and `brain-doctor.sh` runs it.",
   "hooks": {
     "PreToolUse": [
       {
@@ -6,15 +7,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-workspace-updates.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-workspace-updates.sh\"; if [ -r \"$script\" ]; then exec bash \"$script\"; fi; echo \"GUARD MISSING: .claude/hooks/enforce-workspace-updates.sh is registered in .claude/settings.json but is not readable. Restore it or remove its registration — this blocks rather than passes, because a guard that cannot run has checked nothing.\" >&2; exit 2'"
           },
           {
             "type": "command",
-            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-credential-safety.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-credential-safety.sh\"; if [ -r \"$script\" ]; then exec bash \"$script\"; fi; echo \"GUARD MISSING: .claude/hooks/enforce-credential-safety.sh is registered in .claude/settings.json but is not readable. Restore it or remove its registration — this blocks rather than passes, because a guard that cannot run has checked nothing.\" >&2; exit 2'"
           },
           {
             "type": "command",
-            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-evidence.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-evidence.sh\"; if [ -r \"$script\" ]; then exec bash \"$script\"; fi; echo \"GUARD MISSING: .claude/hooks/enforce-evidence.sh is registered in .claude/settings.json but is not readable. Restore it or remove its registration — this blocks rather than passes, because a guard that cannot run has checked nothing.\" >&2; exit 2'"
           }
         ]
       },
@@ -23,15 +24,15 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-money-decimal.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-money-decimal.sh\"; if [ -r \"$script\" ]; then exec bash \"$script\"; fi; echo \"GUARD MISSING: .claude/hooks/enforce-money-decimal.sh is registered in .claude/settings.json but is not readable. Restore it or remove its registration — this blocks rather than passes, because a guard that cannot run has checked nothing.\" >&2; exit 2'"
           },
           {
             "type": "command",
-            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-state-transitions.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-state-transitions.sh\"; if [ -r \"$script\" ]; then exec bash \"$script\"; fi; echo \"GUARD MISSING: .claude/hooks/enforce-state-transitions.sh is registered in .claude/settings.json but is not readable. Restore it or remove its registration — this blocks rather than passes, because a guard that cannot run has checked nothing.\" >&2; exit 2'"
           },
           {
             "type": "command",
-            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-sensitive-data.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/enforce-sensitive-data.sh\"; if [ -r \"$script\" ]; then exec bash \"$script\"; fi; echo \"GUARD MISSING: .claude/hooks/enforce-sensitive-data.sh is registered in .claude/settings.json but is not readable. Restore it or remove its registration — this blocks rather than passes, because a guard that cannot run has checked nothing.\" >&2; exit 2'"
           }
         ]
       }
@@ -42,7 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/mirror-agents.sh\"; [ -x \"$script\" ] && exec \"$script\" || true'"
+            "command": "bash -c 'script=\"$(git rev-parse --show-toplevel)/.claude/hooks/mirror-agents.sh\"; if [ -r \"$script\" ]; then exec bash \"$script\"; fi; echo \"GUARD MISSING: .claude/hooks/mirror-agents.sh is registered in .claude/settings.json but is not readable. Restore it or remove its registration — this blocks rather than passes, because a guard that cannot run has checked nothing.\" >&2; exit 2'"
           }
         ]
       }

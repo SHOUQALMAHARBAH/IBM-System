@@ -15,6 +15,12 @@ Requires `bash` and a working Python interpreter on `PATH` as either `python3` o
 useful on Windows, where `python3` can resolve to a non-functional Microsoft Store
 app-execution-alias shim even when a real interpreter is installed as `python`).
 
+**If neither resolves, the hooks that read a tool call now BLOCK rather than pass.** Three of
+them used to swallow the failure (`2>/dev/null`, then a bare `except: pass`), so an
+unparseable or unreadable input produced an empty string and the guard exited 0 — a guard
+that had checked nothing, reporting success. Added 2026-11-07 along with
+`scripts/hook_health.py`; `enforce-credential-safety.sh` is deliberately unchanged.
+
 ```bash
 bash scripts/brain-setup.sh
 ```

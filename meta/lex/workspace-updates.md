@@ -27,7 +27,11 @@ Every change to the brain that a developer would need to know about — new agen
 
 ## How it is enforced
 
-**Hook:** `.claude/hooks/enforce-workspace-updates.sh` — `PreToolUse` on `Bash`. Inspects `git commit` commands, checks staged files against the trigger list, exits 1 with instructions if `CLAUDE.md` and `README.md` are not staged alongside.
+**Hook:** `.claude/hooks/enforce-workspace-updates.sh` — `PreToolUse` on `Bash`. Inspects `git commit` commands, checks staged files against the trigger list, and **exits 2** with instructions if `CLAUDE.md` and `README.md` are not staged alongside.
+
+**Corrected 2026-11-07: this said "exits 1", and exit 1 would not have blocked anything.** Claude Code treats a hook's exit 1 as a non-blocking error and proceeds with the tool call; **only exit 2 blocks**. The script has always exited 2 — so the text documented the single most common hook bug as this guard's behaviour, in the one paragraph a reader consults to find out whether the rule is actually enforced. `scripts/brain-doctor.sh` § Hook enforcement exists specifically to catch an `exit 1` in a hook, and it was green the whole time because the defect was in the prose, not the script. **The exit code was not changed to match the sentence; the sentence was corrected to match the code.**
+
+**The two trigger classes are not the same, and the difference is `meta/templates/`.** Any change to `.claude/{agents,hooks,commands}/`, `.claude/settings.json`, `meta/{lex,guides,agents}/` or `scripts/` triggers this rule. For `meta/templates/` **only the existence of a file triggers it** — an added, deleted or renamed template changes the mechanics a developer meets; rewording one does not, per § What does NOT trigger this rule above. The hook reads `git diff --cached --name-status` and distinguishes `A`/`D`/`R` from `M` for that path alone. **Before 2026-11-07 it treated `meta/templates/` like every other trigger**, so rewording a PR template demanded a dated `CLAUDE.md` row and a README edit — which is how a guard teaches people to route around it.
 
 ## Rationale
 
