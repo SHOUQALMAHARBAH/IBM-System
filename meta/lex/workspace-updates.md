@@ -17,6 +17,7 @@ Every change to the brain that a developer would need to know about — new agen
 - Changes to `.claude/settings.json` or MCP configuration
 - Changes to setup or onboarding steps
 - Breaking changes to existing behaviour
+- **A new owner-decision number cited in code with no file in `<repo>/docs/decision-<n>-<slug>.md` and no row in `meta/decision-index.md`.** Added 2026-11-08. This is an EXTENSION of the question this rule already asks — *what did this change just make false?* — not a twelfth law, because the index is a developer-facing document like `CLAUDE.md` and `README.md` and rots the same way. A number cited with nothing saying what it means sends the next reader to the owner, whose standing instruction is that nobody should have to come back to her. `ibms-app` gates it both ways with `npm run check:decision-index`, which also walks a multi-number citation — `decisions 32 and 33` is how decision 33 stayed out of the register for its whole life, cited nine times and never once on its own.
 
 ## What does NOT trigger this rule
 
