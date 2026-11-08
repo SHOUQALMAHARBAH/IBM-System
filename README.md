@@ -55,13 +55,14 @@ instruction is that nobody should have to. Four rows are marked «قُرِّر �
 not built — and those are decisions 9, 20, 46 and 122. `ibms-app` gates it both ways with
 `npm run check:decision-index`.
 
-It was 47 until 2026-11-08, and the 48th is worth knowing about: **decision 33 is cited ten
-times and appears ONLY inside the phrase `decisions 32 and 33`, never once on its own**, so
+It was 47 until 2026-11-08, and the 48th is worth knowing about: **decision 33 is cited in ten
+places and appears ONLY inside the phrase `decisions 32 and 33`, never once on its own**, so
 every matcher anchored on the word `decision` immediately before a number read the `32` and
 was blind to the `33` — it had no file and no row for the whole life of the register. Two
 independent re-derivations of the total both said 47 for that one shared reason. **Never
-narrow that matcher back to the first number**, and do not count a joint-only citation with a
-single-line search: the tenth one wraps a line inside a block comment.
+narrow that matcher back to the first number.** And one of those ten sites wraps a line
+inside a block comment, so a literal search finds nine — which is why the file's own figure
+is nine, correctly, with that method declared beside it.
 
 ---
 
