@@ -23,29 +23,46 @@ uses it as the default for `addBusinessDays()`/`applyDuration()`.
 
 ## The rules that aren't obvious
 
-- **No gazetted public-holiday calendar exists anywhere in this brain.** This is the same
-  class of gap already recorded in `meta/context/data-retention-and-disposal.md` for the
-  `PRIV-STD-03` retention-period table: engineering has never been handed the actual list
-  of Jordanian public holidays (fixed-date national holidays plus the lunar-calendar
-  Islamic holidays whose Gregorian dates shift year to year and are only confirmed a few
-  weeks ahead by royal decree) to exclude from a business-day count.
-- **Consequence:** any business-day SLA deadline computed today — e.g.
-  `ibms-app`'s `addBusinessDays()` — only skips Friday/Saturday. It does not skip Eid
-  al-Fitr, Eid al-Adha, Independence Day, or any other public holiday that falls on a
-  weekday within the SLA window. That makes every computed deadline a **lower bound**: the
-  true statutory/contractual deadline (which does exclude public holidays) is never
-  *earlier* than the computed one, but may be *later* — so a system that escalates on the
-  computed date escalates conservatively (early), never in violation of the real deadline,
-  but also never exactly on time. Do not present a business-day-computed date as the
-  legally exact deadline in any DPO-facing or regulator-facing report until a real holiday
-  calendar is supplied.
-- **The fix is the same as the retention-period gap**: someone with the authority to
-  supply an authoritative Jordanian public-holiday source (DPO/Compliance/Legal, or HR's
-  existing annual holiday circular if one exists) needs to hand it over. At that point this
-  file should gain a real "The holiday calendar" section (a source, an update cadence for
-  the lunar holidays, and how far ahead it's confirmed) and
-  `business-days.util.ts`/`addBusinessDays()` should take a holiday list, not just a
-  weekend-days set.
+- **CORRECTED 2026-11-08 — THE CALENDAR EXISTS, AND THIS WAS THE THIRD PLACE THE SAME
+  STALE SENTENCE WAS WRITTEN.** This bullet said *"No gazetted public-holiday calendar
+  exists anywhere in this brain"*, and the two copies in `ibms-app`
+  (`business-days.util.ts`'s top docblock and `follow-up.util.ts`'s) both cited THIS FILE
+  as their authority. It was true when written and rotted in place. **Measured:**
+  `model SlaHoliday` is in `packages/db/prisma/schema.prisma`, is editable over HTTP
+  through `sla-timer.controller.ts`, and holds **48 rows on the dev database**. Its source
+  and its cadence rule are in `apps/api/src/modules/sla/jordan-public-holidays.config.ts`
+  — Jordan's Ministry of Foreign Affairs, owner-supplied 2026-09-28 — which is the "real
+  holiday calendar section" the old third bullet asked for, and it carries the rule that
+  matters: **the Islamic dates are entered per year from the official announcement and are
+  never computed**, because the announced day can differ from any calendar conversion and
+  a wrong deadline would look like arithmetic rather than a wrong input. Only the four
+  fixed dates may be generated.
+- **`addBusinessDays()` ALREADY TAKES A HOLIDAY LIST.** The old third bullet named that as
+  the outstanding fix; `BusinessDayOptions.holidays` has shipped. **So what is left is
+  WIRING, not capability, and it is a narrower and more checkable statement than the one
+  this file used to make.** The util is pure and does no I/O, so each caller must pass the
+  set. Measured 2026-11-08: 12 non-spec files import it, 9 evaluate a duration, and the
+  holidays reach exactly ONE path — `sla-timer.service.ts:234` → `computePolicyDueAt`,
+  the configured-`SlaPolicy` path.
+- **Consequence, now true of SEVEN call sites rather than of every deadline.** The
+  reasoning below is unchanged and still correct wherever no calendar is passed: such a
+  deadline only skips Friday/Saturday, does not skip Eid al-Fitr, Eid al-Adha,
+  Independence Day or any other public holiday falling on a weekday inside the window, and
+  is therefore a **lower bound** — never *earlier* than the true statutory deadline, but
+  possibly *later*. A system escalating on it escalates early, never in violation, and
+  never exactly on time. **Do not present such a date as the legally exact deadline in a
+  DPO-facing or regulator-facing report.** The seven, measured in `ibms-app`:
+  `follow-up.util.ts:37`, `dsr.config.ts:95`,
+  `access-recertification.controller.ts:75`, `access-recertification.scheduler.ts:40`,
+  and three inside `sla-timer.service.ts` itself — `:181` the registry fallback (the only
+  path on a database with no `SlaPolicy` rows), `:227` the regulatory fast track, and
+  `:277` the one non-zero escalation offset (DSR's T−3-business-day DPO warning).
+- **A caller whose unit is not `businessDays` is not in that set.** `calendarDays`,
+  `months`, and `minutes`/`hours` without a `workingWindow` never consult
+  `businessDayOptions`, so there is nothing for them to pass and passing one would be dead
+  code. `CONTINUOUS_24_7` policies are holiday-blind **deliberately** — a containment
+  clock does not stop for Friday — and `businessDayOptionsFor` records that at its own
+  site.
 
 ## Where the code lives
 

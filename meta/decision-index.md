@@ -1,8 +1,8 @@
 # The decision index — فهرسُ قراراتِ المالكة
 
-**٤٨ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
+**٤٩ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
 
-**48 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
+**49 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
 
 > **ليش هذا الملفُّ موجود.** في الكودِ مكتوبٌ «قرارُ المالكةِ ٤٨» في ٧٤ موضعاً — **ومن غيرِ هذا الفهرسِ ما في طريقةٌ تعرف شو هو القرارُ ٤٨ إلّا أن تسألَها.** وقاعدتُها: *«ما بدي حد يرجعلي»*. **فهذا الفهرسُ هو البديلُ عن سؤالِها.**
 >
@@ -17,6 +17,12 @@
 > **Re-derived independently, 2026-11-08, and the two routes agree on 47 by different arithmetic.** Running that method over tracked files under `apps/` + `packages/` on `main` gives **52** distinct numbers, not 48. Five are the matcher, not decisions: `409` is an HTTP status in `(409)` after the word `ClientDecision`, `6` is `Decision (6 outcomes)`, `17` is the backlog's `Client Decision #17`, `1` is the fixture id `'act-decision-1'`, and **`98` is real but already had its file before this batch** (`docs/decision-98-widened-and-concentration.md`). 52 - 4 phantoms - 1 already-filed = **47**, and the 47 numbers match the 47 filenames exactly, in both directions. The date `2026-10-29` is excluded as a date rather than read as `202`. `npm run check:decision-index` is the gate; it declares this pattern and both exclusion lists in the script, so the figure is re-run and never recalled.
 >
 > **CORRECTED 2026-11-08, SAME DAY, AND THE CORRECTION IS WORTH MORE THAN THE NUMBER: THE TOTAL IS 48, AND THE TWO ROUTES AGREED ON 47 BECAUSE THEY SHARED ONE BLIND SPOT.** The 48th is **decision 33**, and it is cited in **ten places** — nine of which a literal search finds, the tenth wrapping a line inside a block comment, which is why its own file states nine and is right to. Both counts missed it for the same structural reason: it appears ONLY inside the phrase `decisions 32 and 33`, never once on its own, so every matcher anchored on the word `decision` immediately before a number read the `32` and was blind to the `33`. **Two independent counts agreeing is evidence only when they are independent in the thing that can be wrong** — and here they shared their matcher's shape, so the agreement at 47 confirmed the arithmetic and could not confirm the coverage. The Arabic paragraph above is left exactly as written: it is a true account of a method that really does yield 47, and the 47 is the history rather than an error to erase. **The gate now walks a multi-number citation**, self-tested in the two-number and the four-number shape, so this hole cannot quietly reopen — and its own count of decision 33 is **wrap-tolerant**, because the tenth citation breaks across a line inside a block comment and a single-line search finds only nine.
+
+> **🔴 وأُضيفَ القرارُ ٩٨ في ٨ تشرين الثاني، والعددُ صار ٤٩ لا ٤٨ — والسببُ يستاهل يُقرأ.** **ملفُّه كان موجوداً في `docs/` من قبلِ هذي الدفعة، فاستُثنيَ من عدِّ الدفعةِ بحقٍّ** (الفقرةُ فوق تقول ذلك بنصِّها) — **لكنّه استُثنيَ من الفهرسِ كذلك، فبقي رقمٌ مذكورٌ في الكودِ بلا سطرٍ هنا، والرأسُ يقول إنّ كلَّ رقمٍ له سطر.** ⟶ **يعني الفهرسُ ادّعى اكتمالاً ما كان مكتملاً، وهذا بالزبط العطلُ اللي هذا الفهرسُ موجودٌ ليمنعَه.**
+>
+> **ومقيسٌ من المستودع:** `ls docs/decision-*.md | grep -cE 'decision-[0-9]+-'` **يطلّع ٤٩**، وصفوفُ هذا الجدولِ كانت **٤٨**، والناقصُ واحدٌ هو **٩٨**. **و`ls docs/decision*.md | wc -l` يطلّع ٥٦ — والفرقُ سبعةُ ملفّاتٍ مسمّاةٍ بأسمائِها لا بأرقامِها، وهي ليست نقصاً في الفهرس.** ⟶ **فالرقمُ ٤٩ أو ٥٦ أو ٤٨ صحيحٌ كلُّه، كلٌّ بوحدةِ عدِّه — ومن يقرأ رقماً بلا وحدتِه يفهم غيرَ اللي صار.**
+>
+> **🔴 وملاحظةٌ للمهندس:** **البوّابةُ عدَّت وطبعَت «٤٩ مذكوراً · ٤٩ ملفاً · ٤٨ سطراً» وخرجَت بصفر.** **فهي تقرّر الفرقَ ولا توقفه.** ⟶ **وبوّابةٌ تطبع الثقبَ ولا تمنعه تُقرأ خضراءَ وتُعبَر.**
 
 
 ## الفهرس
@@ -70,6 +76,7 @@
 | **٩٢** | لمّا يُفرَض جزاء على مكتب، مشغّل المنصة يشوف شياً واحداً: إن هذا المكتب ما يقدر يُصدِر. ولا يشوف مرجع القرار، ولا سنده، ولا تاريخ نفاذه، ولا تاريخ انتهائه، ولا الكتاب نفسه، ولا نوعه. | [`decision-92-provider-sees-fact-about.md`](../../docs/decision-92-provider-sees-fact-about.md) |  |
 | **٩٣** | لمّا يُمسَح تقييم شركة التأمين، تاريخه يُمسَح معه في نفس العملية. وجواب الخادم ما يحمل أي أثر لقيود قاعدة البيانات. | [`decision-93-clearing-rating-clears-date.md`](../../docs/decision-93-clearing-rating-clears-date.md) |  |
 | **٩٤** | أي اسم عربي لصلاحية، وأي جملة عربية جديدة، قرارك أنتِ. والنظام ما يكتب واحدة من عنده ولا يترجم. | [`decision-94-arabic-owner-s-system.md`](../../docs/decision-94-arabic-owner-s-system.md) |  |
+| **٩٨** | كلُّ زرِّ تاريخٍ أو مهلةٍ صلاحيةٌ مستقلةٌ باسمها. **ووُسِّع منطقُه:** الرمزُ الواحدُ ما يحرس فعلَين مختلفَي الأثر — واحدٌ لا يُرجَع أو يغيّر مصيرَ السجلّ، وآخرُ مجرّدُ قراءةٍ أو مسوّدة. | [`decision-98-widened-and-concentration.md`](../../docs/decision-98-widened-and-concentration.md) |  |
 | **١٢٢** | القناة اللي كنا بنفكر نطلب فيها من البنك المركزي قائمة تربط فروع الترخيص بأنواع التأمين عندنا — مقفولة. لا نطلب، ولا نبني. | [`decision-122-we-do-request-list.md`](../../docs/decision-122-we-do-request-list.md) | 🔴 **نعم** |
 
 ## الأربعةُ المعلَّمةُ «قُرِّر ولم يُبنَ» — وهذا مقصودٌ لا نقص
