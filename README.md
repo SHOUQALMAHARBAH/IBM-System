@@ -47,13 +47,22 @@ git pull --rebase origin main   # only if behind AND clean AND on main
 A stale brain means missing rules the reviewer blocks on. Full rule: [`meta/lex/brain-freshness.md`](meta/lex/brain-freshness.md).
 
 **And read [`meta/decision-index.md`](meta/decision-index.md) before asking what an
-`OWNER DECISION <n>` comment in the code means.** 47 numbers, each with the decision in one
+`OWNER DECISION <n>` comment in the code means.** 48 numbers, each with the decision in one
 sentence beside its number and a link to its file in `ibms-app/docs/`. It exists because
 `OWNER DECISION 48` is cited 74 times across 57 files and, until 2026-11-08, nothing anywhere
 said what decision 48 was — so the only way to find out was to ask the owner, whose standing
 instruction is that nobody should have to. Four rows are marked «قُرِّر ولم يُبنَ» — decided,
 not built — and those are decisions 9, 20, 46 and 122. `ibms-app` gates it both ways with
 `npm run check:decision-index`.
+
+It was 47 until 2026-11-08, and the 48th is worth knowing about: **decision 33 is cited in ten
+places and appears ONLY inside the phrase `decisions 32 and 33`, never once on its own**, so
+every matcher anchored on the word `decision` immediately before a number read the `32` and
+was blind to the `33` — it had no file and no row for the whole life of the register. Two
+independent re-derivations of the total both said 47 for that one shared reason. **Never
+narrow that matcher back to the first number.** And one of those ten sites wraps a line
+inside a block comment, so a literal search finds nine — which is why the file's own figure
+is nine, correctly, with that method declared beside it.
 
 ---
 
