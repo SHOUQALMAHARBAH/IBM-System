@@ -46,6 +46,15 @@ git pull --rebase origin main   # only if behind AND clean AND on main
 
 A stale brain means missing rules the reviewer blocks on. Full rule: [`meta/lex/brain-freshness.md`](meta/lex/brain-freshness.md).
 
+**And read [`meta/decision-index.md`](meta/decision-index.md) before asking what an
+`OWNER DECISION <n>` comment in the code means.** 47 numbers, each with the decision in one
+sentence beside its number and a link to its file in `ibms-app/docs/`. It exists because
+`OWNER DECISION 48` is cited 74 times across 57 files and, until 2026-11-08, nothing anywhere
+said what decision 48 was — so the only way to find out was to ask the owner, whose standing
+instruction is that nobody should have to. Four rows are marked «قُرِّر ولم يُبنَ» — decided,
+not built — and those are decisions 9, 20, 46 and 122. `ibms-app` gates it both ways with
+`npm run check:decision-index`.
+
 ---
 
 ## What's here
@@ -53,6 +62,8 @@ A stale brain means missing rules the reviewer blocks on. Full rule: [`meta/lex/
 ```
 ibms-brain/
   meta/
+    decision-index.md  Every owner-decision number cited in the code, with the decision's
+                       own text beside it and a link to its file in ibms-app/docs/
     lex/          Rules that gate every PR — non-negotiable
     context/      Domain knowledge — data model, lifecycles, roles, PCMS module map, glossary
     designs/      Architecture/compliance decisions with the reasoning preserved
