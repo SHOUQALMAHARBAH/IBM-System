@@ -1,8 +1,8 @@
 # The decision index — فهرسُ قراراتِ المالكة
 
-**٥٤ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
+**٥٦ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
 
-**54 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
+**56 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
 
 > **ليش هذا الملفُّ موجود.** في الكودِ مكتوبٌ «قرارُ المالكةِ ٤٨» في ٧٤ موضعاً — **ومن غيرِ هذا الفهرسِ ما في طريقةٌ تعرف شو هو القرارُ ٤٨ إلّا أن تسألَها.** وقاعدتُها: *«ما بدي حد يرجعلي»*. **فهذا الفهرسُ هو البديلُ عن سؤالِها.**
 >
@@ -83,6 +83,8 @@
 | **١٢٥** | **الشرطة «—» ما تظهر في النظام أبداً: كل خانة فاضية وكل خيار في قائمة يحمل كلمة بحسب سياق شاشته، وتُقاس شاشات كل مديول وتُعدَّل معه.** | [`decision-125-no-dash-a-word-per-field-by-its-screen.md`](../../docs/decision-125-no-dash-a-word-per-field-by-its-screen.md) |  |
 | **١٢٦** | **النظام ينبّه ويسجّل ولا يمنع: الفعل المخالف يمشي بنافذةٍ فيها نص المادة وسبب مكتوب وإقرار، والمسؤولية على المكتب — ويُرفَض الفعل فقط حين يكون ضرره ما يُستدرَك ويقع على غير المكتب.** | [`decision-126-declare-and-record-refuse-only-the-irreversible.md`](../../docs/decision-126-declare-and-record-refuse-only-the-irreversible.md) |  |
 | **١٢٧** | **ما في رمز صلاحية يظهر للمستخدم في أي شاشة أو رسالة: لكل صلاحية اسم عربي قصير صريح مقتطَع من شرحها، والرمز يبقى جوّا النظام مرجعاً ولا يُعرَض.** | [`decision-127-no-permission-code-shown-an-arabic-name.md`](../../docs/decision-127-no-permission-code-shown-an-arabic-name.md) |  |
+| **١٢٨** | **المكتب اللي خلص ترخيصه وقدّم التجديد بوقته ورفع إثبات التقديم بكمّل يصدر ويجدّد، وكل وثيقة بتنوسم لحالها إنها صدرت والتجديد قيد الدراسة — واللي ما قدّم، أو قدّم متأخر، أو سجّل إشعار نقص أو رفض، بينمنع من أفعال الإصدار الستة بس، لحد ما يرفع الشهادة الجديدة.** | [`decision-128-renewal-under-study-proof-opens-not-date.md`](../../docs/decision-128-renewal-under-study-proof-opens-not-date.md) |  |
+| **١٢٩** | **النظام بوسم الإعفاء لحاله وين بيعرف، والموظف بختار بس لما النظام ما بيعرف.** | [`decision-129-exemption-tagged-by-the-system-chosen-only-when-unknown.md`](../../docs/decision-129-exemption-tagged-by-the-system-chosen-only-when-unknown.md) |  |
 
 ## الأربعةُ المعلَّمةُ «قُرِّر ولم يُبنَ» — وهذا مقصودٌ لا نقص
 
