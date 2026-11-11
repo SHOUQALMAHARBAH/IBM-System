@@ -1,8 +1,8 @@
 # The decision index — فهرسُ قراراتِ المالكة
 
-**٤٩ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
+**٥٧ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
 
-**49 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
+**57 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
 
 > **ليش هذا الملفُّ موجود.** في الكودِ مكتوبٌ «قرارُ المالكةِ ٤٨» في ٧٤ موضعاً — **ومن غيرِ هذا الفهرسِ ما في طريقةٌ تعرف شو هو القرارُ ٤٨ إلّا أن تسألَها.** وقاعدتُها: *«ما بدي حد يرجعلي»*. **فهذا الفهرسُ هو البديلُ عن سؤالِها.**
 >
@@ -65,7 +65,7 @@
 | **٥٧** | في دور في المكتب ما بيصير يملك ملف عميل أبداً. فشاشة العملاء عنده كانت بتفلتر على «العملاء اللي أملكهم» — فتطلع فاضية دائماً وتقول إنه ما في عملاء. والقرار: هو يشوف الكل. | [`decision-57-role-can-customer-sees.md`](../../docs/decision-57-role-can-customer-sees.md) |  |
 | **٥٨** | موظف فتح شاشة تقرير وما اختار فترة — هو يسأل عن الشهر الحالي. أما حساب تقييم شهري، فعن الشهر اللي خلص. | [`decision-58-reader-s-month-scoring.md`](../../docs/decision-58-reader-s-month-scoring.md) |  |
 | **٥٩** | اثنتا عشرة كلمة عربية على شاشات الموافقات والمطابقات ومراقبة العمليات — اعتمدتها المالكة. وإحدى عشرة منها كانت موجودة في النظام فعلاً، والجديدة واحدة، وهي بدّلت كلمة كانت موجودة وغلط. | [`decision-59-twelve-words-eleven-them.md`](../../docs/decision-59-twelve-words-eleven-them.md) |  |
-| **٦٠** | على شاشات الحسابات والشكاوى والحوادث، سمّيتِ ثلاث حالات بكلماتك. وما في حالة رابعة — فلما ما تنطبق واحدة منهن، الشاشة تعرض شرطة، لا جملة من عند النظام. | [`decision-60-three-cases-dash-none.md`](../../docs/decision-60-three-cases-dash-none.md) |  |
+| **٦٠** | ⛔ **مُسقَطٌ في ٣ تشرين الثاني ٢٠٢٦، ويحلُّ محلَّه [١٢٥](../../docs/decision-125-no-dash-a-word-per-field-by-its-screen.md).** والسطرُ يبقى: قرارٌ مُسقَطٌ يُعلَّم ولا يُمحى. على شاشات الحسابات والشكاوى والحوادث، سمّيتِ ثلاث حالات بكلماتك. وما في حالة رابعة — فلما ما تنطبق واحدة منهن، الشاشة تعرض شرطة، لا جملة من عند النظام. | [`decision-60-three-cases-dash-none.md`](../../docs/decision-60-three-cases-dash-none.md) |  |
 | **٦٣** | عندنا كتالوج فيه أسماء شركات التأمين. ولما شركة تتسجّل فعلاً في النظام، بياناتها هي الأصح — وبيانات الكتالوج تنزاح. | [`decision-63-registered-company-outranks-catalogue.md`](../../docs/decision-63-registered-company-outranks-catalogue.md) |  |
 | **٦٤** | التقييم المالي لشركة التأمين، وتاريخه، والجهة اللي أعطته — كلهم شي هذا المكتب سجّله وهو يقوم بواجب الحذر عند اختيار شركة. فهم ملك المكتب، والدليل المشترك ما يعرض أي واحد منهم أبداً. | [`decision-64-insurer-s-financial-rating.md`](../../docs/decision-64-insurer-s-financial-rating.md) |  |
 | **٦٧** | حقول تسجيل المكتب وشركة التأمين تُقرأ بحذر: النظام ما يستنتج أن شركة مرخَّصة لنوعين من التأمين لأن بياناتها تسمح بذلك. | [`decision-67-licence-granted-reported.md`](../../docs/decision-67-licence-granted-reported.md) |  |
@@ -78,6 +78,14 @@
 | **٩٤** | أي اسم عربي لصلاحية، وأي جملة عربية جديدة، قرارك أنتِ. والنظام ما يكتب واحدة من عنده ولا يترجم. | [`decision-94-arabic-owner-s-system.md`](../../docs/decision-94-arabic-owner-s-system.md) |  |
 | **٩٨** | كلُّ زرِّ تاريخٍ أو مهلةٍ صلاحيةٌ مستقلةٌ باسمها. **ووُسِّع منطقُه:** الرمزُ الواحدُ ما يحرس فعلَين مختلفَي الأثر — واحدٌ لا يُرجَع أو يغيّر مصيرَ السجلّ، وآخرُ مجرّدُ قراءةٍ أو مسوّدة. | [`decision-98-widened-and-concentration.md`](../../docs/decision-98-widened-and-concentration.md) |  |
 | **١٢٢** | القناة اللي كنا بنفكر نطلب فيها من البنك المركزي قائمة تربط فروع الترخيص بأنواع التأمين عندنا — مقفولة. لا نطلب، ولا نبني. | [`decision-122-we-do-request-list.md`](../../docs/decision-122-we-do-request-list.md) | 🔴 **نعم** |
+| **١٢٣** | **الرقم المكتوب في الصكّ نحطّه جاهزاً بمادّته، والرقم اللي الصكّ يحيله لقرارٍ ما صدر بعد يُدخله المكتب بسنده لمّا يصدر ويُعلنه مرّة واحدة — وكل معاملة تنطبق عليها تُوسَم بذاك الإعلان تلقائياً، ولا تطلع نافذة إلّا على فعلٍ كان النظام رح يرفضه.** | [`decision-123-office-supplies-value-system-attributes-it.md`](../../docs/decision-123-office-supplies-value-system-attributes-it.md) |  |
+| **١٢٤** | **كل معاملة تحمل فرعها وقت ما انصدرت، ويُختَم عليها ساعتها ولا يتغيّر بعدها — ولا يُستنتَج الفرع من ملف الموظف، لأنّ الموظف ينتقل والتاريخ ما يصير ينتقل معه.** | [`decision-124-branch-stamped-at-creation-not-derived.md`](../../docs/decision-124-branch-stamped-at-creation-not-derived.md) |  |
+| **١٢٥** | **الشرطة «—» ما تظهر في النظام أبداً: كل خانة فاضية وكل خيار في قائمة يحمل كلمة بحسب سياق شاشته، وتُقاس شاشات كل مديول وتُعدَّل معه.** | [`decision-125-no-dash-a-word-per-field-by-its-screen.md`](../../docs/decision-125-no-dash-a-word-per-field-by-its-screen.md) |  |
+| **١٢٦** | **النظام ينبّه ويسجّل ولا يمنع: الفعل المخالف يمشي بنافذةٍ فيها نص المادة وسبب مكتوب وإقرار، والمسؤولية على المكتب — ويُرفَض الفعل فقط حين يكون ضرره ما يُستدرَك ويقع على غير المكتب.** | [`decision-126-declare-and-record-refuse-only-the-irreversible.md`](../../docs/decision-126-declare-and-record-refuse-only-the-irreversible.md) |  |
+| **١٢٧** | **ما في رمز صلاحية يظهر للمستخدم في أي شاشة أو رسالة: لكل صلاحية اسم عربي قصير صريح مقتطَع من شرحها، والرمز يبقى جوّا النظام مرجعاً ولا يُعرَض.** | [`decision-127-no-permission-code-shown-an-arabic-name.md`](../../docs/decision-127-no-permission-code-shown-an-arabic-name.md) |  |
+| **١٢٨** | **المكتب اللي خلص ترخيصه وقدّم التجديد بوقته ورفع إثبات التقديم بكمّل يصدر ويجدّد، وكل وثيقة بتنوسم لحالها إنها صدرت والتجديد قيد الدراسة — واللي ما قدّم، أو قدّم متأخر، أو سجّل إشعار نقص أو رفض، بينمنع من أفعال الإصدار الستة بس، لحد ما يرفع الشهادة الجديدة.** | [`decision-128-renewal-under-study-proof-opens-not-date.md`](../../docs/decision-128-renewal-under-study-proof-opens-not-date.md) |  |
+| **١٢٩** | **النظام بوسم الإعفاء لحاله وين بيعرف، والموظف بختار بس لما النظام ما بيعرف.** | [`decision-129-exemption-tagged-by-the-system-chosen-only-when-unknown.md`](../../docs/decision-129-exemption-tagged-by-the-system-chosen-only-when-unknown.md) |  |
+| **١٣٠** | **المكتب بيبعت كل طلب عرض سعر لثلاث شركات أو أكثر لأنه هيك القانون، والنافذة بتطلع بس لما الطلب يروح لأقل من ثلاث وما في إعفاء.** | [`decision-130-three-insurers-per-request-and-four-rulings.md`](../../docs/decision-130-three-insurers-per-request-and-four-rulings.md) |  |
 
 ## الأربعةُ المعلَّمةُ «قُرِّر ولم يُبنَ» — وهذا مقصودٌ لا نقص
 
