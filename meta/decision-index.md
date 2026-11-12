@@ -1,8 +1,8 @@
 # The decision index — فهرسُ قراراتِ المالكة
 
-**٥٧ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
+**٥٩ قراراً. كلُّ رقمٍ مذكورٍ في الكودِ له سطرٌ هنا وملفٌّ في `docs/`.**
 
-**57 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
+**59 decisions. Every decision number cited anywhere in the code has a row here and a file in `docs/`.**
 
 > **ليش هذا الملفُّ موجود.** في الكودِ مكتوبٌ «قرارُ المالكةِ ٤٨» في ٧٤ موضعاً — **ومن غيرِ هذا الفهرسِ ما في طريقةٌ تعرف شو هو القرارُ ٤٨ إلّا أن تسألَها.** وقاعدتُها: *«ما بدي حد يرجعلي»*. **فهذا الفهرسُ هو البديلُ عن سؤالِها.**
 >
@@ -86,6 +86,8 @@
 | **١٢٨** | **المكتب اللي خلص ترخيصه وقدّم التجديد بوقته ورفع إثبات التقديم بكمّل يصدر ويجدّد، وكل وثيقة بتنوسم لحالها إنها صدرت والتجديد قيد الدراسة — واللي ما قدّم، أو قدّم متأخر، أو سجّل إشعار نقص أو رفض، بينمنع من أفعال الإصدار الستة بس، لحد ما يرفع الشهادة الجديدة.** | [`decision-128-renewal-under-study-proof-opens-not-date.md`](../../docs/decision-128-renewal-under-study-proof-opens-not-date.md) |  |
 | **١٢٩** | **النظام بوسم الإعفاء لحاله وين بيعرف، والموظف بختار بس لما النظام ما بيعرف.** | [`decision-129-exemption-tagged-by-the-system-chosen-only-when-unknown.md`](../../docs/decision-129-exemption-tagged-by-the-system-chosen-only-when-unknown.md) |  |
 | **١٣٠** | **المكتب بيبعت كل طلب عرض سعر لثلاث شركات أو أكثر لأنه هيك القانون، والنافذة بتطلع بس لما الطلب يروح لأقل من ثلاث وما في إعفاء.** | [`decision-130-three-insurers-per-request-and-four-rulings.md`](../../docs/decision-130-three-insurers-per-request-and-four-rulings.md) |  |
+| **١٣١** | **إحنا بنطلّع كل صلاحيات النظام بالمصفوفة وما بنعطي ولا وحدة لحدا؛ الصلاحية الجديدة بتنزل معلَّمة بالأخضر إنها جديدة ويوصل إشعار للأدمن، وهو بيقرر لمين يعطيها وعلى أي دور.** | [`decision-131-new-permission-shown-green-office-decides.md`](../../docs/decision-131-new-permission-shown-green-office-decides.md) |  |
+| **١٣٢** | **نص المستشار في كل نافذة يبقى حرفاً كما كتبه، وحيث لا يحمل إبراء ذمة الشركة المطوّرة تُضاف تحته جملة الإبراء نفسها منقولة من نصّه في نافذة م(١٥/د)، ومعها حدّها. وسائل التبليغ المعتمدة هي الأربع التي تعدّها المادة (٢٢/س)، والواتساب ليس منها.** | [`decision-132-release-line-and-approved-means.md`](../../docs/decision-132-release-line-and-approved-means.md) |  |
 
 ## الأربعةُ المعلَّمةُ «قُرِّر ولم يُبنَ» — وهذا مقصودٌ لا نقص
 
